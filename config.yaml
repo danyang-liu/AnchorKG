@@ -1,0 +1,47 @@
+name: "AnchorKG"
+n_gpu: 1
+data_loader:
+    batch_size: 128
+    shuffle: true
+    num_workers: 1
+
+data:
+  datapath: "./data/"
+  savepath: "./out/"
+  warm_up_train_file: "warmup_train.tsv"
+  warm_up_test_file: "warmup_test.tsv"
+  train_file: "train.tsv"
+  val_file: "val.tsv"
+  test_file: "test.tsv"
+  doc_feature_entity_file: "doc_entity.tsv"
+  doc_feature_embedding_file: "doc_embedding.tsv"
+  kg_file: "kg.tsv"
+  entity_embedding_file: "entity2vec.vec"
+  relation_embedding_file: "relation2vec.vec"
+  entity2id_file: "entity2id.txt"
+  relation2id_file: "relation2id.txt"
+
+model:
+  doc_embedding_size: 768
+  embedding_size: 128
+  news_entity_num: 20
+  alpha1: 0.9 # weight of recommendation reward and reasoning reward
+  alpha2: 0.1 # weight of immediate reward
+  beta: 0.2
+  topk: [5,3,2] # field sizes
+  gamma: 0.9
+
+trainer:
+  epochs: 100
+  warm_up: flase
+  train_neg_num: 4
+  save_dir: "./out/saved/"
+  save_period: 1
+  early_stop: 3
+  monitor: "val_auc"
+
+optimizer:
+  type: "Adam"
+  lr: 0.0001
+  weight_decay: 0.000001
+  amsgrad: true
