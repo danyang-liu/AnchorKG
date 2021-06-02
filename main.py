@@ -2,10 +2,17 @@ import argparse
 from data_loader.data_loaders import *
 from train_test import *
 from parse_config import ConfigParser
+import pickle
 
 
 def main(config):
-    data = load_data(config)
+    # data = load_data(config)
+    # with open("/data/RAGNRec_data/data/data2.pkl", 'wb') as f:
+    #     pickle.dump(data, f)
+
+    with open("/data/RAGNRec_data/data/data.pkl", 'rb') as f:
+        data = pickle.load(f)
+
     train_test(data, config)
 
 

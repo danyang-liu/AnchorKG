@@ -1,6 +1,5 @@
 import json
 import torch
-import pandas as pd
 import numpy as np
 from pathlib import Path
 import networkx as nx
@@ -45,13 +44,117 @@ def prepare_device(n_gpu_use):
     list_ids = list(range(n_gpu_use))
     return device, list_ids
 
+def maybe_download(url, filename=None, work_directory=".", expected_bytes=None):
+    """Download a file if it is not already downloaded.
+
+    Args:
+        filename (str): File name.
+        work_directory (str): Working directory.
+        url (str): URL of the file to download.
+        expected_bytes (int): Expected file size in bytes.
+
+    Returns:
+        str: File path of the file downloaded.
+    """
+    if filename is None:
+        filename = url.split("/")[-1]
+    os.makedirs(work_directory, exist_ok=True)
+    filepath = os.path.join(work_directory, filename)
+    if not os.path.exists(filepath):
+
+        r = requests.get(url, stream=True)
+        total_size = int(r.headers.get("content-length", 0))
+        block_size = 1024
+        num_iterables = math.ceil(total_size / block_size)
+
+        with open(filepath, "wb") as file:
+            for data in tqdm(
+                    r.iter_content(block_size),
+                    total=num_iterables,
+                    unit="KB",
+                    unit_scale=True,
+            ):
+                file.write(data)
+    if expected_bytes is not None:
+        statinfo = os.stat(filepath)
+        if statinfo.st_size != expected_bytes:
+            os.remove(filepath)
+            raise IOError("Failed to verify {}".format(filepath))
+
+    return filepath
+
+def unzip_file(zip_src, dst_dir, clean_zip_file=True):
+    """Unzip a file
+
+    Args:
+        zip_src (str): Zip file.
+        dst_dir (str): Destination folder.
+        clean_zip_file (bool): Whether or not to clean the zip file.
+    """
+    fz = zipfile.ZipFile(zip_src, "r")
+    for file in fz.namelist():
+        fz.extract(file, dst_dir)
+    if clean_zip_file:
+        os.remove(zip_src)
+
+def get_mind_data_set(type):
+    """ Get MIND dataset address
+
+    Args:
+        type (str): type of mind dataset, must be in ['large', 'small', 'demo']
+
+    Returns:
+        list: data url and train valid dataset name
+    """
+    assert type in ["large", "small", "demo"]
+
+    if type == "large":
+        return (
+            "https://mind201910small.blob.core.windows.net/release/",
+            "MINDlarge_train.zip",
+            "MINDlarge_dev.zip",
+            "MINDlarge_utils.zip",
+        )
+
+    elif type == "small":
+        return (
+            "https://mind201910small.blob.core.windows.net/release/",
+            "MINDsmall_train.zip",
+            "MINDsmall_dev.zip",
+            "MINDsma_utils.zip",
+        )
+
+    elif type == "demo":
+        return (
+            "https://recodatasets.blob.core.windows.net/newsrec/",
+            "MINDdemo_train.zip",
+            "MINDdemo_dev.zip",
+            "MINDdemo_utils.zip",
+        )
+
+def download_deeprec_resources(azure_container_url, data_path, remote_resource_name):
+    """Download resources.
+
+    Args:
+        azure_container_url (str): URL of Azure container.
+        data_path (str): Path to download the resources.
+        remote_resource_name (str): Name of the resource.
+    """
+    os.makedirs(data_path, exist_ok=True)
+    remote_path = azure_container_url + remote_resource_name
+    maybe_download(remote_path, remote_resource_name, data_path)
+    zip_ref = zipfile.ZipFile(os.path.join(data_path, remote_resource_name), "r")
+    zip_ref.extractall(data_path)
+    zip_ref.close()
+    os.remove(os.path.join(data_path, remote_resource_name))
+
 def build_train(config):
     print('constructing train ...')
     train_data = {}
     item1 = []
     item2 = []
     label = []
-    fp_train = open(config['data']['train_file'], 'r', encoding='utf-8')
+    fp_train = open(config['data']['datapath']+config['data']['train_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         item1.append(linesplit[1])
@@ -69,7 +172,7 @@ def build_val(config):
     item1 = []
     item2 = []
     label = []
-    fp_train = open(config['data']['val_file'], 'r', encoding='utf-8')
+    fp_train = open(config['data']['datapath']+config['data']['val_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         item1.append(linesplit[1])
@@ -83,7 +186,7 @@ def build_val(config):
 def build_test(config):
     print('constructing test ...')
     test_data = {}
-    fp_train = open(config['data']['test_file'], 'r', encoding='utf-8')
+    fp_train = open(config['data']['datapath']+config['data']['test_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         if linesplit[0] == "1":
@@ -97,7 +200,7 @@ def build_test(config):
 
 def build_doc_feature_embedding(config):
     print('constructing doc feature embedding ...')
-    fp_doc_feature = open(config['data']['doc_feature_embedding_file'], 'r', encoding='utf-8')
+    fp_doc_feature = open(config['data']['datapath']+config['data']['doc_feature_embedding_file'], 'r', encoding='utf-8')
     doc_embedding_feature_dict = {}
     for line in fp_doc_feature:
         linesplit = line.split('\n')[0].split('\t')
@@ -107,13 +210,13 @@ def build_doc_feature_embedding(config):
 def build_network(config):
     print('constructing adjacency matrix ...')
     entity_id_dict = {}
-    fp_entity2id = open(config['data']['entity2id_file'], 'r', encoding='utf-8')
+    fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
     for line in fp_entity2id:
         linesplit = line.split('\n')[0].split('\t')
         entity_id_dict[linesplit[0]] = int(linesplit[1])+1# 0 for padding
 
     relation_id_dict = {}
-    fp_relation2id = open(config['data']['relation2id_file'], 'r', encoding='utf-8')
+    fp_relation2id = open(config['data']['datapath']+config['data']['relation2id_file'], 'r', encoding='utf-8')
     for line in fp_relation2id:
         linesplit = line.split('\n')[0].split('\t')
         relation_id_dict[linesplit[0]] = int(linesplit[1])+1# 0 for padding
@@ -122,7 +225,7 @@ def build_network(config):
     print('constructing kg env ...')
 
     # add news entity to kg
-    fp_news_entities = open(config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         linesplit = line.strip().split('\t')
         newsid = linesplit[0]
@@ -132,7 +235,7 @@ def build_network(config):
                 network.add_edge(newsid, entity_id_dict[entity], label="innews")
                 network.add_edge(entity_id_dict[entity], newsid, label="innews")
 
-    adj_file_fp = open(config['data']['kg_file'], 'r', encoding='utf-8')
+    adj_file_fp = open(config['data']['datapath']+config['data']['kg_file'], 'r', encoding='utf-8')
     adj = {}
     for line in adj_file_fp:
         linesplit = line.split('\n')[0].split('\t')
@@ -174,24 +277,24 @@ def build_entity_relation_embedding(config):
     print('constructing embedding ...')
     entity_embedding = []
     relation_embedding = []
-    fp_entity_embedding = open(config['data']['entity_embedding_file'], 'r', encoding='utf-8')
+    fp_entity_embedding = open(config['data']['datapath']+config['data']['entity_embedding_file'], 'r', encoding='utf-8')
     for line in fp_entity_embedding:
         entity_embedding.append(np.array(line.strip().split('\t')).astype(np.float))
-    fp_relation_embedding = open(config['data']['relation_embedding_file'], 'r', encoding='utf-8')
+    fp_relation_embedding = open(config['data']['datapath']+config['data']['relation_embedding_file'], 'r', encoding='utf-8')
     for line in fp_relation_embedding:
         relation_embedding.append(np.array(line.strip().split('\t')).astype(np.float))
     return torch.FloatTensor(entity_embedding), torch.FloatTensor(relation_embedding)
 
-def load_news_entity(config, news_entities_path):
+def load_news_entity(config):
     entityid2index = {}
-    fp_entity2id = open(config['data']['entity2id_file'], 'r', encoding='utf-8')
+    fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
     for line in fp_entity2id:
         entityid, entityindex = line.strip().split('\t')
         entityid2index[entityid] = int(entityindex)+1 #0 for padding
 
     doc_entities = {}
     entity_doc = {}
-    fp_news_entities = open(news_entities_path, 'r', encoding='utf-8')
+    fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         linesplit = line.strip().split('\t')
         newsid = linesplit[0]
@@ -215,7 +318,7 @@ def load_news_entity(config, news_entities_path):
 
 def load_doc_feature(config):
     doc_embeddings = {}
-    fp_news_feature = open(config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_feature = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_feature:
         newsid, news_embedding = line.strip().split('\t')
         news_embedding = news_embedding.split(',')
@@ -228,7 +331,7 @@ def get_anchor_graph_data(config):
     item1 = []
     item2 = []
     label = []
-    fp_news_entities = open(config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         linesplit = line.strip().split('\t')
         newsid = linesplit[0]
@@ -244,7 +347,7 @@ def get_anchor_graph_data(config):
 def build_hit_dict(config):
     print('constructing hit dict ...')
     hit_dict = {}
-    fp_train = open(config['data']['train_file'], 'r', encoding='utf-8')
+    fp_train = open(config['data']['datapath']+config['data']['train_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         if linesplit[0] == '1':
@@ -259,7 +362,7 @@ def build_hit_dict(config):
 def load_warm_up(config):
     print('build warm up data ...')
     warm_up_data = {}
-    fp_warmup = open(config['data']['warm_up_train_file'], 'r', encoding='utf-8')
+    fp_warmup = open(config['data']['datapath']+config['data']['warm_up_train_file'], 'r', encoding='utf-8')
     item1 = []
     item2 = []
     label = []
@@ -278,7 +381,7 @@ def load_warm_up(config):
 def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding):
     print('build neiborhood embedding ...')
     entity_id_dict = {}
-    fp_entity2id = open(config['data']['entity2id_file'], 'r', encoding='utf-8')
+    fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
     for line in fp_entity2id:
         linesplit = line.split('\n')[0].split('\t')
         entity_id_dict[linesplit[0]] = int(linesplit[1]) + 1  # int
@@ -295,4 +398,9 @@ def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding):
         entity_neibor_embedding_list[entity] = np.sum(entity_news_embedding_list, axis=0)
         if len(entity_doc_dict[entity])>=2:
             entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1
-    return torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
+    return torch.tensor(entity_neibor_embedding_list), torch.tensor(entity_neibor_num_list)#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
+
+def build_item2item_dataset():
+    #count click time first
+    pass
+    #build item2item dataset
