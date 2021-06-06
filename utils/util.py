@@ -5,6 +5,10 @@ from pathlib import Path
 import networkx as nx
 from itertools import repeat
 from collections import OrderedDict
+from sentence_transformers import SentenceTransformer
+import requests
+import math
+import zipfile
 
 
 def ensure_dir(dirname):
@@ -400,7 +404,52 @@ def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding):
             entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1
     return torch.tensor(entity_neibor_embedding_list), torch.tensor(entity_neibor_num_list)#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
 
-def build_item2item_dataset():
-    #count click time first
-    pass
-    #build item2item dataset
+def build_item2item_dataset(config):
+    fp_train = open(config['data']['train_behavior'], 'r', encoding='utf-8')
+    item2item_train = {}
+    item2item_test = {}
+    news_click_dict = {}
+    news_pair_dict = {}
+    all_news_set = set()
+    for line in fp_train:
+        index, userid, imp_time, history, behavior = line.strip().split('\t')
+        behavior = behavior.split(' ')
+        for news in behavior:
+            positive_list = []
+            newsid, news_label = news.split('-')
+            all_news_set.add(newsid)
+            if news_label == "1":
+                positive_list.append(newsid)
+                if newsid not in news_click_dict:
+                    news_click_dict[newsid] = 1
+                else:
+                    news_click_dict[newsid] = news_click_dict[newsid] + 1
+        news = history.split(' ')
+        positive_list = []
+        for newsid in news:
+            positive_list.append(newsid)
+            if newsid not in news_click_dict:
+                news_click_dict[newsid] = 1
+            else:
+                news_click_dict[newsid] = news_click_dict[newsid] + 1
+        if len(positive_list) >= 2:
+            for i in range(len(positive_list) - 1):
+                for j in range(i, len(positive_list)):
+                    if (positive_list[i], positive_list[j]) not in news_pair_dict and (
+                    positive_list[j], positive_list[i]) not in news_pair_dict:
+                        news_pair_dict[(positive_list[i], positive_list[j])] = 1
+                    elif (positive_list[i], positive_list[j]) in news_pair_dict:
+                        news_pair_dict[(positive_list[i], positive_list[j])] = news_pair_dict[(
+                        positive_list[i], positive_list[j])] + 1
+                    else:
+                        news_pair_dict[(positive_list[j], positive_list[i])] = news_pair_dict[(positive_list[j], positive_list[i])] + 1
+    return item2item_train, item2item_test
+
+def build_doc_feature(config):
+    entity2id_dict = {}
+    fp_entity2id = open(config['data']['entity_index'], 'r', encoding='utf-8')
+    entity_num = int(fp_entity2id.readline().split('\n')[0])
+    for line in fp_entity2id.readlines():
+        entity, entityid = line.strip().split('\t')
+        entity2id_dict[entity] = int(entityid) + 1
+    model = SentenceTransformer('distilbert-base-nli-stsb-mean-tokens')

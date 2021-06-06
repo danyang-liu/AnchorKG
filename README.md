@@ -39,3 +39,5 @@ networkx = 2.5
 ## How to run the code:
 
     $ python ./main.py --config config.yaml
+
+quick example: AnchorKG_example.ipynb

@@ -76,9 +76,6 @@ class Recommender(BaseModel):
         news_embedding2 = self.tanh(self.news_compress2(self.elu(self.news_compress1(news_embedding2))))
         anchor_embedding1 = self.get_anchor_graph_embedding(anchor_graph1)
         anchor_embedding2 = self.get_anchor_graph_embedding(anchor_graph2)
-
-        # anchor_embedding1 = torch.sum(anchor_embedding1, dim=0)
-        # anchor_embedding2 = torch.sum(anchor_embedding2, dim=0)
         news_embedding1 = torch.cat([news_embedding1,anchor_embedding1], dim=-1)
         news_embedding2 = torch.cat([news_embedding2,anchor_embedding2], dim=-1)
 

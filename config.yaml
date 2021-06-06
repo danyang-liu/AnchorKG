@@ -6,53 +6,28 @@ data_loader:
     num_workers: 1
 
 data:
-  datapath: "/data/RAGNRec_data/data"
-  savepath: "./out/"
-#  warm_up_train_file: "/warmup_data_train.tsv"
-#  warm_up_test_file: "/warmup_data_test.tsv"
-#  train_file: "/tiny_dataset/train_tiny.tsv"
-#  val_file: "/tiny_dataset/test_tiny.tsv"
-#  test_file: "/tiny_dataset/test_tiny.tsv"
-#  doc_feature_entity_file: "/tiny_dataset/doc_feature_entity_tiny.tsv"
-#  doc_feature_embedding_file: "/tiny_dataset/doc_feature_embedding_tiny.tsv"
-#  kg_file: "/tiny_dataset/adj_tiny2.tsv"
-#  entity_embedding_file: "/mind_dataset/entity2vec.vec"
-#  relation_embedding_file: "/mind_dataset/relation2vec.vec"
-#  entity2id_file: "/tiny_dataset/entity_relation2id_tiny.tsv"
-#  relation2id_file: "/tiny_dataset/entity_relation2id_tiny.tsv"
-
-#  warm_up_train_file: "/warmup_data_train.tsv"
-#  warm_up_test_file: "/warmup_data_test.tsv"
-#  train_file: "/item2item/dataset_v1_sub/train_small.tsv"
-#  val_file: "/item2item/dataset_v1_sub/valid_small.tsv"
-#  test_file: "/item2item/dataset_v1_sub/test.tsv"
-#  doc_feature_entity_file: "/mind_dataset/doc_feature_entity_all.tsv"
-#  doc_feature_embedding_file: "/V2_100w_Docs_sentense_bert.tsv"
-#  kg_file: "/mind_dataset/adj_new.tsv"
-#  entity_embedding_file: "/entity2vec.vec"
-#  relation_embedding_file: "/relation2vec.vec"
-#  entity2id_file: "/mind_dataset/entity2id.txt"
-#  relation2id_file: "/mind_dataset/relation2id.txt"
-
+  datapath: "/data"
+  savepath: "/out"
   warm_up_train_file: "/warmup_data_train.tsv"
   warm_up_test_file: "/warmup_data_test.tsv"
-  train_file: "/item2item/dataset_v1/train.tsv"
-  val_file: "/item2item/dataset_v1/valid.tsv"
-  test_file: "/item2item/dataset_v1/test.tsv"
-  doc_feature_entity_file: "/mind_dataset/doc_feature_entity_all.tsv"
-  doc_feature_embedding_file: "/V2_100w_Docs_sentense_bert.tsv"
-  kg_file: "/mind_dataset/adj_new.tsv"
+  train_file: "/item2item/train.tsv"
+  val_file: "/item2item/valid.tsv"
+  test_file: "/item2item/test.tsv"
+  doc_feature_entity_file: "/doc_feature_entity.tsv"
+  doc_feature_embedding_file: "/doc_feature_embedding.tsv"
+  kg_file: "/kg.tsv"
   entity_embedding_file: "/entity2vec.vec"
   relation_embedding_file: "/relation2vec.vec"
-  entity2id_file: "/mind_dataset/entity2id.txt"
-  relation2id_file: "/mind_dataset/relation2id.txt"
+  entity2id_file: "/entity2id.txt"
+  relation2id_file: "/relation2id.txt"
+
 
 model:
   doc_embedding_size: 768
   embedding_size: 128
   news_entity_num: 20
-  alpha1: 0.5 # weight of recommendation reward and reasoning reward
-  alpha2: 0.2 # weight of immediate reward
+  alpha1: 0.9 # weight of recommendation reward and reasoning reward
+  alpha2: 0.9 # weight of immediate reward
   beta: 0.2
   topk: [5,3,2] # field sizes
   gamma: 0.9

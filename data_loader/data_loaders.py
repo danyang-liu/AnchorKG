@@ -28,8 +28,7 @@ class NewsDataLoader(BaseDataLoader):
 
 
 def load_data(config):
-    warm_up_train_data = load_warm_up(config)
-    warm_up_test_data = load_warm_up(config)
+
     Train_data = build_train(config)
     Val_data = build_val(config)
     Test_data = build_test(config)
@@ -39,12 +38,17 @@ def load_data(config):
     neibor_embedding, neibor_num = build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding)
     entity_embedding, relation_embedding = build_entity_relation_embedding(config)
     hit_dict = build_hit_dict(config)
-
-    warmup_train_data = NewsDataset(warm_up_train_data)
-    warmup_train_dataloader = DataLoader(warmup_train_data, batch_size=config['data_loader']['batch_size'])
-
     train_data = NewsDataset(Train_data)
     train_dataloader = DataLoader(train_data, batch_size=config['data_loader']['batch_size'])
+
+    if config['trainer']['warm_up']:
+        warm_up_train_data = load_warm_up(config)
+        warm_up_test_data = load_warm_up(config)
+        warmup_train_data = NewsDataset(warm_up_train_data)
+        warmup_train_dataloader = DataLoader(warmup_train_data, batch_size=config['data_loader']['batch_size'])
+    else:
+        warmup_train_dataloader = None
+        warm_up_test_data = None
 
     print("fininsh loading data!")
 

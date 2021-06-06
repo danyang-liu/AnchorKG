@@ -224,20 +224,6 @@ class AnchorKG(BaseModel):
             action_id_input = torch.unsqueeze(action_id_input, 1)
             relation_id_input = torch.unsqueeze(relation_id_input, 1)
 
-        # weights = weights.squeeze(-1)
-        # q_values = q_values.squeeze(-1)
-        # m = Categorical(weights)
-        # acts_idx = m.sample(sample_shape=torch.Size([topk]))
-        # acts_idx = acts_idx.permute(1,2,0)
-        # state_id_input_value = action_id_input.gather(1, acts_idx)
-        # relation_id_selected = relation_id_input.gather(1, acts_idx)
-        # weights = weights.gather(1, acts_idx)
-        # q_values = q_values.gather(1, acts_idx)
-        # weights = weights.reshape(weights.shape[0],  weights.shape[1] * weights.shape[2])
-        # q_values = q_values.reshape(q_values.shape[0], q_values.shape[1] * q_values.shape[2])
-        # state_id_input_value = state_id_input_value.reshape(state_id_input_value.shape[0], state_id_input_value.shape[1] * state_id_input_value.shape[2])
-        # relation_id_selected = relation_id_selected.reshape(relation_id_selected.shape[0], relation_id_selected.shape[1] * relation_id_selected.shape[2])
-
         weights = weights.squeeze(-1)
         q_values = q_values.squeeze(-1)
         m = Categorical(weights)
@@ -261,33 +247,6 @@ class AnchorKG(BaseModel):
         q_values = q_values.reshape(shape0, shape1 * q_values.shape[1])
         state_id_input_value = state_id_input_value.reshape(shape0, shape1 *  state_id_input_value.shape[1])
         relation_id_selected = relation_id_selected.reshape(shape0, shape1 *  relation_id_selected.shape[1])
-
-
-
-        # topk_weights = torch.topk(weights, topk, dim=-2)
-        # shape0 = topk_weights[1].shape[0]
-        # shape1 = topk_weights[1].shape[1]
-        # topk_index = topk_weights[1].reshape(topk_weights[1].shape[0] * topk_weights[1].shape[1],
-        #                                      topk_weights[1].shape[2])
-        # weights = weights.reshape(weights.shape[0] * weights.shape[1], weights.shape[2])
-        # q_values = q_values.reshape(q_values.shape[0] * q_values.shape[1], q_values.shape[2])
-        # weights = weights.gather(1, topk_index)  # torch.index_select(weights, 1, topk_index)
-        # q_values = q_values.gather(1, topk_index)  # torch.index_select(q_values, 1, topk_index)
-        # action_id_input = action_id_input.reshape(action_id_input.shape[0] * action_id_input.shape[1],
-        #                                           action_id_input.shape[2])
-        # relation_id_input = relation_id_input.reshape(relation_id_input.shape[0] * relation_id_input.shape[1],
-        #                                               relation_id_input.shape[2])
-        # state_id_input_value = action_id_input.gather(1,
-        #                                               topk_index)  # torch.index_select(action_id_input, 1, topk_index)
-        # relation_id_selected = relation_id_input.gather(1,
-        #                                                 topk_index)  # torch.index_select(relation_id_input, 1, topk_index)
-        #
-        # weights = weights.reshape(shape0, shape1 * weights.shape[1])
-        # q_values = q_values.reshape(shape0, shape1 * q_values.shape[1])
-        # state_id_input_value = state_id_input_value.reshape(shape0, shape1 * state_id_input_value.shape[1])
-        # relation_id_selected = relation_id_selected.reshape(shape0, shape1 * relation_id_selected.shape[1])
-
-
         return weights, q_values, state_id_input_value, relation_id_selected
 
     def get_news_embedding_input(self, entity_ids, news_embeddings):
@@ -297,21 +256,14 @@ class AnchorKG(BaseModel):
 
     def get_state_input(self, news_embedding, depth, anchor_graph, history_entity_1, history_relation_1):
         if depth == 0:
-            #state_embedding = torch.cat([news_embedding, torch.tensor(np.zeros((news_embedding.shape[0],128))).float().cuda(),torch.tensor(np.zeros((news_embedding.shape[0],128))).float().cuda()], dim=-1)
             state_embedding = torch.cat(
                 [news_embedding, torch.tensor(np.zeros((news_embedding.shape[0], 128))).float().cuda()], dim=-1)
         else:
-            #state_embedding_anchor = self.get_anchor_embedding(anchor_graph)
             history_entity_embedding = self.entity_embedding(history_entity_1)
             history_relation_embedding = self.relation_embedding(history_relation_1)
             state_embedding_new = history_relation_embedding + history_entity_embedding
             state_embedding_new = torch.mean(state_embedding_new, dim=1, keepdim=False)
-            #state_embedding = torch.cat([news_embedding, state_embedding_anchor, state_embedding_new], dim=-1)
             state_embedding = torch.cat([news_embedding, state_embedding_new], dim=-1)
-        # state_embedding = torch.cat(
-        #     [news_embedding, torch.tensor(np.zeros((news_embedding.shape[0], 128))).float().cuda(),
-        #      torch.tensor(np.zeros((news_embedding.shape[0], 128))).float().cuda()], dim=-1) #todo
-
         return state_embedding
 
     def get_neighbors(self, entities):
@@ -342,7 +294,7 @@ class AnchorKG(BaseModel):
         neibor_entities, neibor_relations = self.get_neighbors(anchor_graph_nodes)
         neibor_entities_embedding = self.entity_embedding(neibor_entities)
         neibor_relations_embedding = self.entity_embedding(neibor_relations)
-        anchor_embedding = anchor_graph_nodes#torch.cat([anchor_graph_nodes, torch.sum(neibor_entities_embedding+neibor_relations_embedding, dim=-2)])
+        anchor_embedding = torch.cat([anchor_graph_nodes, torch.sum(neibor_entities_embedding+neibor_relations_embedding, dim=-2)])
         anchor_embedding = self.tanh(self.anchor_embedding_layer(anchor_embedding))
         anchor_embedding_weight = self.softmax(self.anchor_weighs1_layer2(self.elu(self.anchor_weighs1_layer1(anchor_embedding))))
         anchor_embedding = torch.sum(anchor_embedding * anchor_embedding_weight, dim=-2) #todo -2

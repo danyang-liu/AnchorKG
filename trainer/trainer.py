@@ -210,14 +210,7 @@ class Trainer(BaseTrainer):
                 loss.backward()
                 self.optimizer_anchor.step()
                 anchor_all_loss = anchor_all_loss + loss.data
-            # if actor_loss_list != []:
-            #     actor_loss = torch.stack(actor_loss_list).sum()  # sum up all the loss
-            #     actor_loss.backward(retain_graph=True)
-            #     critic_loss = torch.stack(critic_loss_list).sum()  # sum up all the loss
-            #     critic_loss.backward()
-            #     self.optimizer_anchor.step()
-            #     actor_all_loss = actor_all_loss + actor_loss.data
-            #     critic_all_loss = critic_all_loss + critic_loss.data
+
             torch.cuda.empty_cache()
 
         torch.save(self.model_anchor.state_dict(), './out/saved/models/AnchorKG/checkpoint_anchor.pt')
@@ -227,8 +220,6 @@ class Trainer(BaseTrainer):
                    './out/saved/models/AnchorKG/checkpoint_reasoner.pt')
 
         print("anchor all loss: " + str(anchor_all_loss))
-        # print("actor all loss: " + str(actor_all_loss))
-        # print("critic all loss: " + str(critic_all_loss))
         print("embedding all loss: " + str(embedding_all_loss))
         print("reasoning all loss: " + str(reasoning_all_loss))
 
@@ -252,14 +243,14 @@ class Trainer(BaseTrainer):
                     self.val_data['item1'][start:end], self.val_data['item2'][start:end])
                 embedding_predict = self.model_recommender(self.val_data['item1'][start:end], self.val_data['item2'][start:end], anchor_graph1, anchor_graph2)[0]
                 reasoning_predict = self.model_reasoner(self.val_data['item1'][start:end], self.val_data['item2'][start:end], anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2)[0]
-                predict = 0.9*embedding_predict + 0.1*reasoning_predict
+                predict = 0.5*embedding_predict + 0.5*reasoning_predict
                 y_pred.extend(predict.cpu().data.numpy())
             else:
                 act_probs_steps1, q_values_steps1, act_probs_steps2, q_values_steps2, step_rewards1, step_rewards2, anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2 = self.model_anchor(
                     self.val_data['item1'][start:], self.val_data['item2'][start:])
                 embedding_predict = self.model_recommender(self.val_data['item1'][start:], self.val_data['item2'][start:], anchor_graph1, anchor_graph2)[0]
                 reasoning_predict = self.model_reasoner(self.val_data['item1'][start:], self.val_data['item2'][start:], anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2)[0]
-                predict = 0.9 * embedding_predict + 0.1 * reasoning_predict
+                predict = 0.5 * embedding_predict + 0.5 * reasoning_predict
                 y_pred.extend(predict.cpu().data.numpy())
 
         truth = self.val_data['label']

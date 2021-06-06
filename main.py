@@ -6,14 +6,9 @@ import pickle
 
 
 def main(config):
-    # data = load_data(config)
-    # with open("/data/RAGNRec_data/data/data2.pkl", 'wb') as f:
-    #     pickle.dump(data, f)
-
-    with open("/data/RAGNRec_data/data/data.pkl", 'rb') as f:
-        data = pickle.load(f)
-
-    train_test(data, config)
+    data = load_data(config)
+    train(data, config)
+    test(data[4], config)
 
 
 if __name__ == '__main__':

@@ -7,9 +7,7 @@ from model.Reasoner import Reasoner
 from model.Recommender import Recommender
 from trainer.trainer import Trainer
 
-def train_test(data, config):
-
-
+def train(data, config):
 
     warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
     device, deviceids = prepare_device(config['n_gpu'])
@@ -26,6 +24,13 @@ def train_test(data, config):
     trainer = Trainer(config, model_anchor, model_recommender, model_reasoner, criterion, optimizer_anchor, optimizer_recommender, optimizer_reasoner, device, data)
 
     trainer.train()
+
+def test(Test_data, config):
+
+    #load model
+    model_anchor =  torch.load('./out/saved/models/AnchorKG/checkpoint_anchor.pt')
+    model_recommender =  torch.load('./out/saved/models/AnchorKG/checkpoint_recommender.pt')
+    model_reasoner =  torch.load('./out/saved/models/AnchorKG/checkpoint_reasoner.pt')
 
     #test
     model_anchor.eval()
