@@ -8,6 +8,11 @@ data_loader:
 data:
   datapath: "/data"
   savepath: "/out"
+
+  train_news : "./data/train/news.tsv"
+  train_behavior : "./data/train/behaviors.tsv"
+  valid_news : "./data/valid/news.tsv"
+  valid_behavior : "./data/valid/behaviors.tsv"
   warm_up_train_file: "/warmup_data_train.tsv"
   warm_up_test_file: "/warmup_data_test.tsv"
   train_file: "/item2item/train.tsv"
@@ -15,11 +20,11 @@ data:
   test_file: "/item2item/test.tsv"
   doc_feature_entity_file: "/doc_feature_entity.tsv"
   doc_feature_embedding_file: "/doc_feature_embedding.tsv"
-  kg_file: "/kg.tsv"
-  entity_embedding_file: "/entity2vec.vec"
-  relation_embedding_file: "/relation2vec.vec"
-  entity2id_file: "/entity2id.txt"
-  relation2id_file: "/relation2id.txt"
+  kg_file: "./data/kg/wikidata-graph/triple2id.txt"
+  entity_embedding_file: "./data/kg/wikidata-graph/entity2vecd100.vec"
+  relation_embedding_file: "./data/kg/wikidata-graph/relation2vecd100.vec"
+  entity2id_file: "./data/kg/wikidata-graph/entity2id.txt"
+  relation2id_file:  "./data/kg/wikidata-graph/realtion2id.txt"
 
 
 model:

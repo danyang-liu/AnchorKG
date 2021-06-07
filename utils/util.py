@@ -8,6 +8,7 @@ from collections import OrderedDict
 from sentence_transformers import SentenceTransformer
 import requests
 import math
+import random
 import zipfile
 
 
@@ -406,44 +407,89 @@ def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding):
 
 def build_item2item_dataset(config):
     fp_train = open(config['data']['train_behavior'], 'r', encoding='utf-8')
-    item2item_train = {}
-    item2item_test = {}
+    user_history_dict = {}
     news_click_dict = {}
-    news_pair_dict = {}
+    doc_doc_dict = {}
     all_news_set = set()
     for line in fp_train:
         index, userid, imp_time, history, behavior = line.strip().split('\t')
         behavior = behavior.split(' ')
+        if userid not in user_history_dict:
+            user_history_dict[userid] = set()
         for news in behavior:
-            positive_list = []
             newsid, news_label = news.split('-')
             all_news_set.add(newsid)
             if news_label == "1":
-                positive_list.append(newsid)
+                user_history_dict[userid].add(newsid)
                 if newsid not in news_click_dict:
                     news_click_dict[newsid] = 1
                 else:
                     news_click_dict[newsid] = news_click_dict[newsid] + 1
         news = history.split(' ')
-        positive_list = []
         for newsid in news:
-            positive_list.append(newsid)
+            user_history_dict[userid].add(newsid)
             if newsid not in news_click_dict:
                 news_click_dict[newsid] = 1
             else:
                 news_click_dict[newsid] = news_click_dict[newsid] + 1
-        if len(positive_list) >= 2:
-            for i in range(len(positive_list) - 1):
-                for j in range(i, len(positive_list)):
-                    if (positive_list[i], positive_list[j]) not in news_pair_dict and (
-                    positive_list[j], positive_list[i]) not in news_pair_dict:
-                        news_pair_dict[(positive_list[i], positive_list[j])] = 1
-                    elif (positive_list[i], positive_list[j]) in news_pair_dict:
-                        news_pair_dict[(positive_list[i], positive_list[j])] = news_pair_dict[(
-                        positive_list[i], positive_list[j])] + 1
-                    else:
-                        news_pair_dict[(positive_list[j], positive_list[i])] = news_pair_dict[(positive_list[j], positive_list[i])] + 1
-    return item2item_train, item2item_test
+    for user in user_history_dict:
+        list_user_his = list(user_history_dict[user])
+        for i in range(len(list_user_his) - 1):
+            for j in range(i + 1, len(list_user_his)):
+                doc1 = list_user_his[i]
+                doc2 = list_user_his[j]
+                if doc1 != doc2:
+                    if (doc1, doc2) not in doc_doc_dict and (doc2, doc1) not in doc_doc_dict:
+                        doc_doc_dict[(doc1, doc2)] = 1
+                    elif (doc1, doc2) in doc_doc_dict and (doc2, doc1) not in doc_doc_dict:
+                        doc_doc_dict[(doc1, doc2)] = doc_doc_dict[(doc1, doc2)] + 1
+                    elif (doc2, doc1) in doc_doc_dict and (doc1, doc2) not in doc_doc_dict:
+                        doc_doc_dict[(doc2, doc1)] = doc_doc_dict[(doc2, doc1)] + 1
+    weight_doc_doc_dict = {}
+    for item in doc_doc_dict:
+        if item[0] in news_click_dict and item[1] in news_click_dict:
+            weight_doc_doc_dict[item] = doc_doc_dict[item] / math.sqrt(
+                news_click_dict[item[0]] * news_click_dict[item[1]])
+
+    THRED_CLICK_TIME = 10
+    freq_news_set = set()
+    for news in news_click_dict:
+        if news_click_dict[news] > THRED_CLICK_TIME:
+            freq_news_set.add(news)
+    news_pair_thred_w_dict = {}  # {(new1, news2): click_weight}
+    for item in weight_doc_doc_dict:
+        if item[0] in freq_news_set and item[1] in freq_news_set:
+            news_pair_thred_w_dict[item] = weight_doc_doc_dict[item]
+
+    news_positive_pairs = []
+    for item in news_pair_thred_w_dict:
+        if news_pair_thred_w_dict[item] > 0.05:
+            news_positive_pairs.append(item)
+
+    fp_train_data = open(config['data']['datapath'] + config['data']['train_file'], 'w', encoding='utf-8')
+    fp_valid_data = open(config['data']['datapath'] + config['data']['val_file'], 'w', encoding='utf-8')
+    fp_test_data = open(config['data']['datapath'] + config['data']['test_file'], 'w', encoding='utf-8')
+    for item in news_positive_pairs:
+        random_num = random.random()
+        if random_num < 0.8:
+            fp_train_data.write("1" + '\t' + item[0] + '\t' + item[1] + '\n')
+            negative_list = random.sample(list(freq_news_set), 4)
+            for negative in negative_list:
+                fp_train_data.write("0" + '\t' + item[0] + '\t' + negative + '\n')
+        elif random_num < 0.9:
+            fp_valid_data.write("1" + '\t' + item[0] + '\t' + item[1] + '\n')
+            negative_list = random.sample(list(freq_news_set), 4)
+            for negative in negative_list:
+                fp_valid_data.write("0" + '\t' + item[0] + '\t' + negative + '\n')
+        else:
+            fp_test_data.write("1" + '\t' + item[0] + '\t' + item[1] + '\n')
+            negative_list = random.sample(list(freq_news_set), 99)
+            for negative in negative_list:
+                fp_test_data.write("0" + '\t' + item[0] + '\t' + negative + '\n')
+    fp_train_data.close()
+    fp_valid_data.close()
+    fp_test_data.close()
+
 
 def build_doc_feature(config):
     entity2id_dict = {}
@@ -452,4 +498,42 @@ def build_doc_feature(config):
     for line in fp_entity2id.readlines():
         entity, entityid = line.strip().split('\t')
         entity2id_dict[entity] = int(entityid) + 1
+    news_features = {}
+
+    news_feature_dict = {}
+    fp_train_news = open(config['data']['train_news'], 'r', encoding='utf-8')
+    for line in fp_train_news:
+        newsid, vert, subvert, title, abstract, url, entity_info_title, entity_info_abstract = line.strip().split('\t')
+        news_feature_dict[newsid] = (title + " " + abstract, entity_info_title, entity_info_abstract)
+    # entityid, entity_freq, entity_position, entity_type
+    fp_dev_news = open(config['data']['valid_news'], 'r', encoding='utf-8')
+    for line in fp_dev_news:
+        newsid, vert, subvert, title, abstract, url, entity_info_title, entity_info_abstract = line.strip().split('\t')
+        news_feature_dict[newsid] = (title + " " + abstract, entity_info_title, entity_info_abstract)
+
     model = SentenceTransformer('distilbert-base-nli-stsb-mean-tokens')
+    for news in news_feature_dict:
+        sentence_embedding = model.encode(news_feature_dict[news][0])
+        title_entity_json = json.loads(news_feature_dict[news][1])
+        abstract_entity_json = json.loads(news_feature_dict[news][2])
+        news_entity_feature = set()
+        for item in title_entity_json:
+            news_entity_feature.add(item['WikidataId'])
+        for item in abstract_entity_json:
+            news_entity_feature.add(item['WikidataId'])
+        news_features[news] = (sentence_embedding, list(news_entity_feature))
+
+    fp_doc_feature_entity = open(config['data']['datapath'] + config['data']['doc_feature_entity_file'], 'w', encoding='utf-8')
+    fp_doc_feature_embedding = open(config['data']['datapath'] + config['data']['val_file'], 'w', encoding='utf-8')
+    for news in news_feature_dict:
+        fp_doc_feature_entity.write(news+'\t')
+        fp_doc_feature_entity.write(' '.join(news_feature_dict[news][1])+'\n')
+        fp_doc_feature_embedding.write(news + '\t')
+        fp_doc_feature_embedding.write(' '.join(list(map(lambda x:str(x),news_feature_dict[news][0]))) + '\n')
+
+    fp_doc_feature_entity.close()
+    fp_doc_feature_embedding.close()
+
+def process_mind_data(config):
+    build_item2item_dataset(config)
+    build_doc_feature(config)
