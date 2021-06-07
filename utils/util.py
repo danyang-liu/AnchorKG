@@ -406,6 +406,7 @@ def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding):
     return torch.tensor(entity_neibor_embedding_list), torch.tensor(entity_neibor_num_list)#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
 
 def build_item2item_dataset(config):
+    print("constructing item2item dataset ...")
     fp_train = open(config['data']['train_behavior'], 'r', encoding='utf-8')
     user_history_dict = {}
     news_click_dict = {}
@@ -492,6 +493,7 @@ def build_item2item_dataset(config):
 
 
 def build_doc_feature(config):
+    print("constructing news features ... ")
     entity2id_dict = {}
     fp_entity2id = open(config['data']['entity_index'], 'r', encoding='utf-8')
     entity_num = int(fp_entity2id.readline().split('\n')[0])
