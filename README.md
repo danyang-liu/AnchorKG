@@ -40,4 +40,4 @@ networkx = 2.5
 
     $ python ./main.py --config config.yaml
 
-quick example: AnchorKG_example.ipynb
+we also offer a quick example running on MIND dataset: AnchorKG_example.ipynb
