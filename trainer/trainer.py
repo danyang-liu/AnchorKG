@@ -90,12 +90,12 @@ class Trainer(BaseTrainer):
             act_probs_steps1, q_values_steps1, act_probs_steps2, q_values_steps2, step_rewards1, step_rewards2, anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2 = self.model_anchor(
                     batch['item1'], batch['item2'])
             embedding_predict = \
-            self.model_recommender(batch['item1'], batch['item2'], anchor_graph1, anchor_graph2)[0]
+            self.model_recommender(batch['item1'], batch['item2'], anchor_graph1, anchor_graph2)[0]#item1和item2的相似度衡量值，归一到[0,1]
             reasoning_predict = self.model_reasoner(batch['item1'], batch['item2'], anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2)[0]
 
-            embedding_loss = self.criterion(embedding_predict, batch['label'].cuda().float())
-            reasoning_loss = self.criterion(reasoning_predict, batch['label'].cuda().float())
-            reasoning_loss = reasoning_loss.requires_grad_()
+            embedding_loss = self.criterion(embedding_predict, batch['label'].to(self.device).float())
+            reasoning_loss = self.criterion(reasoning_predict, batch['label'].to(self.device).float())
+            reasoning_loss = reasoning_loss.requires_grad_()#为何默认没有梯度
 
             embedding_loss_mean = torch.mean(embedding_loss)
             reasoning_loss_mean = torch.mean(reasoning_loss)
@@ -123,7 +123,7 @@ class Trainer(BaseTrainer):
                         self.config['model']['topk'][2]))
             else:
                 print("error, layer num not match")
-            for i in range(1, num_steps1):
+            for i in range(1, num_steps1):#本轮生成的图算是一次采样，基于此次采样求总的intermediate reward
                 batch_rewards1[num_steps1 - i - 1] = batch_rewards1[num_steps1 - i - 1] + self.config['model'][
                                                                                                   'gamma'] * torch.mean(
                     batch_rewards1[num_steps1 - i], dim=-1)
@@ -178,7 +178,7 @@ class Trainer(BaseTrainer):
                                                                               1 - embedding_loss.detach(),
                                                                               1 - reasoning_loss.detach(),
                                                                               self.config['model']['alpha1'],
-                                                                              self.config['model']['alpha2'])
+                                                                              self.config['model']['alpha2'])#计算actor和critic的loss
                 news1_actor_loss.append(actor_loss1.mean())
                 news1_critic_loss.append(critic_loss1.mean())
                 actor_loss_list.append(actor_loss1.mean())
@@ -213,10 +213,12 @@ class Trainer(BaseTrainer):
 
             torch.cuda.empty_cache()
 
+            break
+
         torch.save(self.model_anchor.state_dict(), './out/saved/models/AnchorKG/checkpoint_anchor.pt')
         torch.save(self.model_recommender.state_dict(),
                    './out/saved/models/AnchorKG/checkpoint_recommender.pt')
-        torch.save(self.model_recommender.state_dict(),
+        torch.save(self.model_reasoner.state_dict(),
                    './out/saved/models/AnchorKG/checkpoint_reasoner.pt')
 
         print("anchor all loss: " + str(anchor_all_loss))
@@ -288,7 +290,7 @@ class Trainer(BaseTrainer):
         # warm up training stage
         if self.config['trainer']['warm_up']:
             logger_train.info("warm up training")
-            warmup_model = Net(self.config, self.entity_id_dict, self.doc_feature_embedding, self.entity_embedding).to(self.device)
+            warmup_model = Net(self.config, self.entity_id_dict, self.doc_feature_embedding, self.entity_embedding, self.device).to(self.device)
             criterion = nn.BCELoss()
             optimizer_warmup = optim.Adam(warmup_model.parameters(), lr=self.config['optimizer']['lr'],
                                           weight_decay=self.config['optimizer']['weight_decay'])
@@ -297,7 +299,7 @@ class Trainer(BaseTrainer):
                 warmup_all_loss = 0
                 for step, batch in enumerate(self.warmup_train_dataloader):
                     predict_value = warmup_model(batch['item2'], batch['item1'])[0]
-                    warmup_loss = criterion(predict_value, batch['label'].cuda().float())
+                    warmup_loss = criterion(predict_value, batch['label'].to(self.device).float())
                     warmup_all_loss = warmup_all_loss + warmup_loss
                     optimizer_warmup.zero_grad()
                     warmup_loss.backward()

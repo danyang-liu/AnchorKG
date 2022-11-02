@@ -1,6 +1,7 @@
 from base.base_data_loader import BaseDataLoader
 from torch.utils.data import Dataset, DataLoader, RandomSampler
 from utils.util import *
+import time
 
 class NewsDataset(Dataset):
     def __init__(self, dic_data, transform=None):
@@ -33,11 +34,30 @@ def load_data(config):
     Val_data = build_val(config)
     Test_data = build_test(config)
     doc_feature_embedding = build_doc_feature_embedding(config)
-    entity_adj, relation_adj, entity_id_dict, kg_env = build_network(config)
-    doc_entity_dict, entity_doc_dict = load_news_entity(config)
-    neibor_embedding, neibor_num = build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding)
-    entity_embedding, relation_embedding = build_entity_relation_embedding(config)
-    hit_dict = build_hit_dict(config)
+
+    if os.path.exists(config['data']['datapath']+"/cache/kg_env.gpickle"):
+        entity_adj = np.load(config['data']['datapath']+"/cache/entity_adj.npy", allow_pickle=True).item()
+        relation_adj = np.load(config['data']['datapath']+"/cache/relation_adj.npy", allow_pickle=True).item()
+        entity_id_dict = np.load(config['data']['datapath']+"/cache/entity_id_dict.npy", allow_pickle=True).item()
+        relation_id_dict = np.load(config['data']['datapath']+"/cache/relation_id_dict.npy", allow_pickle=True).item()
+        kg_env = nx.read_gpickle(config['data']['datapath']+"/cache/kg_env.gpickle")
+        entity_embedding = torch.load(config['data']['datapath']+"/cache/entity_embedding.pt")
+        relation_embedding = torch.load(config['data']['datapath']+"/cache/relation_embedding.pt")
+    else:
+        entity_adj, relation_adj, entity_id_dict, relation_id_dict, kg_env = build_network(config)
+        entity_embedding, relation_embedding = build_entity_relation_embedding(config, len(entity_id_dict), len(relation_id_dict))
+        os.makedirs(config['data']['datapath']+"/cache", exist_ok=True)
+        np.save(config['data']['datapath']+"/cache/entity_adj.npy", entity_adj)
+        np.save(config['data']['datapath']+"/cache/relation_adj.npy", relation_adj)
+        np.save(config['data']['datapath']+"/cache/entity_id_dict.npy", entity_id_dict)
+        np.save(config['data']['datapath']+"/cache/relation_id_dict.npy", relation_id_dict)
+        nx.write_gpickle(kg_env, config['data']['datapath']+"/cache/kg_env.gpickle")
+        torch.save(entity_embedding, config['data']['datapath']+"/cache/entity_embedding.pt")
+        torch.save(relation_embedding, config['data']['datapath']+"/cache/relation_embedding.pt")
+
+    doc_entity_dict, entity_doc_dict = load_news_entity(config, entity_id_dict)
+    neibor_embedding, neibor_num = build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict)
+    hit_dict = build_hit_dict(config)    
     train_data = NewsDataset(Train_data)
     train_dataloader = DataLoader(train_data, batch_size=config['data_loader']['batch_size'])
 

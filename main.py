@@ -7,14 +7,14 @@ import pickle
 
 def main(config):
     data = load_data(config)
-    train(data, config)
-    test(data[4], config)
+    #train(data, config)
+    test(data, config)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='AnchorKG')
 
-    parser.add_argument('-c', '--config', default="./config.json", type=str,
+    parser.add_argument('-c', '--config', default="./config.yaml", type=str,
                       help='config file path (default: None)')
     parser.add_argument('-r', '--resume', default=None, type=str,
                       help='path to latest checkpoint (default: None)')

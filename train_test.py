@@ -11,12 +11,12 @@ def train(data, config):
 
     warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
     device, deviceids = prepare_device(config['n_gpu'])
-    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, kg_env, hit_dict, entity_id_dict, neibor_embedding, neibor_num).to(device)
-    model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj).to(device)
-    model_reasoner = Reasoner(config, kg_env, entity_embedding, relation_embedding).to(device)
+    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, kg_env, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device).to(device)
+    model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device).to(device)
+    model_reasoner = Reasoner(config, kg_env, entity_embedding, relation_embedding, device).to(device)
 
 
-    criterion = nn.BCEWithLogitsLoss(reduce=False)
+    criterion = nn.BCEWithLogitsLoss(reduction='none')
     optimizer_anchor = optim.Adam(model_anchor.parameters(), lr=0.1*config['optimizer']['lr'], weight_decay=config['optimizer']['weight_decay'])
     optimizer_recommender = optim.Adam(model_recommender.parameters(), lr=config['optimizer']['lr'], weight_decay=config['optimizer']['weight_decay'])
     optimizer_reasoner = optim.Adam(model_reasoner.parameters(), lr=config['optimizer']['lr'], weight_decay=config['optimizer']['weight_decay'])
@@ -25,13 +25,22 @@ def train(data, config):
 
     trainer.train()
 
-def test(Test_data, config):
+def test(data, config):
 
+    warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
+    device, deviceids = prepare_device(config['n_gpu'])
+    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, kg_env, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device)
+    model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device)
+    model_reasoner = Reasoner(config, kg_env, entity_embedding, relation_embedding, device)
     #load model
-    model_anchor =  torch.load('./out/saved/models/AnchorKG/checkpoint_anchor.pt')
-    model_recommender =  torch.load('./out/saved/models/AnchorKG/checkpoint_recommender.pt')
-    model_reasoner =  torch.load('./out/saved/models/AnchorKG/checkpoint_reasoner.pt')
+    model_anchor.load_state_dict(torch.load('./out/saved/models/AnchorKG/1030_164655/checkpoint-anchor-epoch2.pth', map_location='cpu'))
+    model_recommender.load_state_dict(torch.load('./out/saved/models/AnchorKG/1030_164655/checkpoint-recommender-epoch2.pth', map_location='cpu'))
+    model_reasoner.load_state_dict(torch.load('./out/saved/models/AnchorKG/1030_164655/checkpoint-reasoner-epoch2.pth', map_location='cpu'))
 
+    model_anchor.to(device)
+    model_recommender.to(device)
+    model_reasoner.to(device)
+   
     #test
     model_anchor.eval()
     model_recommender.eval()

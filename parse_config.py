@@ -71,7 +71,7 @@ class ConfigParser:
 
         #config = read_json(cfg_fname)
         fp_yaml =  open('./config.yaml')
-        config = yaml.load(fp_yaml)
+        config = yaml.load(fp_yaml,Loader=yaml.FullLoader)
         if args.config and resume:
             # update new config for fine-tuning
             config.update(read_json(args.config))

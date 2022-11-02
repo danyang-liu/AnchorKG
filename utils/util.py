@@ -10,7 +10,8 @@ import requests
 import math
 import random
 import zipfile
-
+import os
+from tqdm import tqdm
 
 def ensure_dir(dirname):
     dirname = Path(dirname)
@@ -188,7 +189,7 @@ def build_val(config):
     test_data['label'] = label
     return test_data
 
-def build_test(config):
+def build_test(config):#test集里为每个item创建其正例list
     print('constructing test ...')
     test_data = {}
     fp_train = open(config['data']['datapath']+config['data']['test_file'], 'r', encoding='utf-8')
@@ -216,12 +217,14 @@ def build_network(config):
     print('constructing adjacency matrix ...')
     entity_id_dict = {}
     fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
+    _ = fp_entity2id.readline()
     for line in fp_entity2id:
         linesplit = line.split('\n')[0].split('\t')
         entity_id_dict[linesplit[0]] = int(linesplit[1])+1# 0 for padding
 
     relation_id_dict = {}
     fp_relation2id = open(config['data']['datapath']+config['data']['relation2id_file'], 'r', encoding='utf-8')
+    _ = fp_relation2id.readline()
     for line in fp_relation2id:
         linesplit = line.split('\n')[0].split('\t')
         relation_id_dict[linesplit[0]] = int(linesplit[1])+1# 0 for padding
@@ -232,42 +235,37 @@ def build_network(config):
     # add news entity to kg
     fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
-        linesplit = line.strip().split('\t')
-        newsid = linesplit[0]
-        news_entities = linesplit[1:]
-        for entity in news_entities:
-            if entity in entity_id_dict:
-                network.add_edge(newsid, entity_id_dict[entity], label="innews")
-                network.add_edge(entity_id_dict[entity], newsid, label="innews")
+        try:
+            linesplit = line.strip().split('\t')
+            newsid = linesplit[0]
+            news_entities = linesplit[1].split(" ")
+            for entity in news_entities:
+                if entity in entity_id_dict:
+                    network.add_edge(newsid, entity_id_dict[entity], label="innews")
+                    network.add_edge(entity_id_dict[entity], newsid, label="innews")
+        except:
+            pass
 
     adj_file_fp = open(config['data']['datapath']+config['data']['kg_file'], 'r', encoding='utf-8')
     adj = {}
     for line in adj_file_fp:
-        linesplit = line.split('\n')[0].split('\t')
-        if entity_id_dict[linesplit[0]] not in adj:
-            adj[entity_id_dict[linesplit[0]]] = []
+        head, relation, tail = line.split('\n')[0].split('\t')#(head, relation, tail)
+        if entity_id_dict[head] not in adj:
+            adj[entity_id_dict[head]] = []
+        elif len(adj[entity_id_dict[head]])>=20:
+            continue
 
-        if len(linesplit) <=20:
-            for i in range(1, len(linesplit)):
-                entity, relation = linesplit[i].split('#')
-                adj[entity_id_dict[linesplit[0]]].append(
-                        (int(entity_id_dict[entity]), int(relation_id_dict[relation])))
-                network.add_edge(entity_id_dict[linesplit[0]], int(entity_id_dict[entity]),
-                                 label=str(relation_id_dict[relation]))
-                network.add_edge(int(entity_id_dict[entity]), entity_id_dict[linesplit[0]],
-                                 label=str(relation_id_dict[relation]))
-            for i in range(len(linesplit),21):
-                adj[entity_id_dict[linesplit[0]]].append(
-                    (0, 0))
+        adj[entity_id_dict[head]].append((entity_id_dict[tail], relation_id_dict[relation]))
+        network.add_edge(entity_id_dict[head], entity_id_dict[tail], label=str(relation_id_dict[relation]))
+        network.add_edge(entity_id_dict[tail], entity_id_dict[head], label=str(relation_id_dict[relation]))#为何强行加成双向
+
+    for item in entity_id_dict.values():
+        if item not in adj:
+            adj[item] = [(0, 0)]*20
         else:
-            for i in range(1, 21):
-                entity, relation = linesplit[i].split('#')
-                adj[entity_id_dict[linesplit[0]]].append(
-                        (int(entity_id_dict[entity]), int(relation_id_dict[relation])))
-                network.add_edge(entity_id_dict[linesplit[0]], int(entity_id_dict[entity]),
-                                 label=str(relation_id_dict[relation]))
-                network.add_edge(int(entity_id_dict[entity]), entity_id_dict[linesplit[0]],
-                                 label=str(relation_id_dict[relation]))
+            for _ in range(len(adj[item]), 20):
+                adj[item].append((0, 0))
+
     adj_entity = {}
     adj_entity[0] = list(map(lambda x:int(x), np.zeros(20)))
     for item in adj:
@@ -276,50 +274,48 @@ def build_network(config):
     adj_relation[0] = list(map(lambda x:int(x), np.zeros(20)))
     for item in adj:
         adj_relation[item] = list(map(lambda x: x[1], adj[item]))
-    return adj_entity, adj_relation, entity_id_dict, network
+    return adj_entity, adj_relation, entity_id_dict, relation_id_dict, network
 
-def build_entity_relation_embedding(config):
+def build_entity_relation_embedding(config, entity_num, relation_num):
     print('constructing embedding ...')
-    entity_embedding = []
-    relation_embedding = []
+    entity_embedding = np.zeros((entity_num+1, 100))
+    relation_embedding = np.zeros((relation_num+1, 100))
     fp_entity_embedding = open(config['data']['datapath']+config['data']['entity_embedding_file'], 'r', encoding='utf-8')
-    for line in fp_entity_embedding:
-        entity_embedding.append(np.array(line.strip().split('\t')).astype(np.float))
+    for i, line in enumerate(fp_entity_embedding):
+        entity_embedding[i+1] = np.array(line.strip().split('\t')).astype(np.float)
     fp_relation_embedding = open(config['data']['datapath']+config['data']['relation_embedding_file'], 'r', encoding='utf-8')
-    for line in fp_relation_embedding:
-        relation_embedding.append(np.array(line.strip().split('\t')).astype(np.float))
+    for i, line in enumerate(fp_relation_embedding):
+        relation_embedding[i+1] = np.array(line.strip().split('\t')).astype(np.float)
     return torch.FloatTensor(entity_embedding), torch.FloatTensor(relation_embedding)
 
-def load_news_entity(config):
-    entityid2index = {}
-    fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
-    for line in fp_entity2id:
-        entityid, entityindex = line.strip().split('\t')
-        entityid2index[entityid] = int(entityindex)+1 #0 for padding
-
-    doc_entities = {}
-    entity_doc = {}
+def load_news_entity(config, entity_id_dict):
+    doc2entities = {}
+    entity2doc = {}
     fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         linesplit = line.strip().split('\t')
         newsid = linesplit[0]
-        news_entities = linesplit[1:]
-        doc_entities[newsid] = []
+        if len(linesplit)>1:
+            news_entities = linesplit[1].split(" ")
+        else:
+            news_entities=[]
+        doc2entities[newsid] = []
         for entity in news_entities:
-            if entity in entityid2index:
-                doc_entities[newsid].append(entityid2index[entity])
-                if entityid2index[entity] not in entity_doc:
-                    entity_doc[entityid2index[entity]] = []
-                entity_doc[entityid2index[entity]].append(newsid)
-        if len(doc_entities[newsid]) > config['model']['news_entity_num']:
-            doc_entities[newsid] = doc_entities[newsid][:config['model']['news_entity_num']]
-        for i in range(config['model']['news_entity_num']-len(doc_entities[newsid])):#todo
-            doc_entities[newsid].append(0)
-    for item in entity_doc:
-        if len(entity_doc[item])>config['model']['news_entity_num']:
-            entity_doc[item] = entity_doc[item][:config['model']['news_entity_num']] #todo load entity in titles
+            if entity in entity_id_dict:
+                doc2entities[newsid].append(entity_id_dict[entity])
+                if entity_id_dict[entity] not in entity2doc:
+                    entity2doc[entity_id_dict[entity]] = []
+                entity2doc[entity_id_dict[entity]].append(newsid)
+        if len(doc2entities[newsid]) > config['model']['news_entity_num']:
+            doc2entities[newsid] = doc2entities[newsid][:config['model']['news_entity_num']]
+        else:
+            for i in range(config['model']['news_entity_num']-len(doc2entities[newsid])):#todo
+                doc2entities[newsid].append(0)
+    # for item in entity2doc:#对doc数目也要限制？
+    #     if len(entity2doc[item])>config['model']['news_entity_num']:
+    #         entity2doc[item] = entity2doc[item][:config['model']['news_entity_num']] #todo load entity in titles
 
-    return doc_entities, entity_doc
+    return doc2entities, entity2doc
 
 def load_doc_feature(config):
     doc_embeddings = {}
@@ -383,35 +379,28 @@ def load_warm_up(config):
     warm_up_data['label'] = label
     return warm_up_data
 
-def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding):
+def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict):#返回的是每个entity连接的doc的embedding的平均值和doc数目-1， 用于计算coherence reward
     print('build neiborhood embedding ...')
-    entity_id_dict = {}
-    fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
-    for line in fp_entity2id:
-        linesplit = line.split('\n')[0].split('\t')
-        entity_id_dict[linesplit[0]] = int(linesplit[1]) + 1  # int
     entity_num = len(entity_id_dict)
-    entity_neibor_embedding_list = []
-    entity_neibor_num_list = []
-    for i in range(entity_num+1):
-        entity_neibor_embedding_list.append(np.zeros(768))
-        entity_neibor_num_list.append(1)
+    #每个entity（包括0）的邻居embedding及邻居个数
+    entity_neibor_embedding_list = np.zeros([entity_num+1,768])
+    entity_neibor_num_list = np.ones(entity_num+1, dtype=int)
     for entity in entity_doc_dict:
         entity_news_embedding_list = []
         for news in entity_doc_dict[entity]:
             entity_news_embedding_list.append(doc_feature_embedding[news])
         entity_neibor_embedding_list[entity] = np.sum(entity_news_embedding_list, axis=0)
         if len(entity_doc_dict[entity])>=2:
-            entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1
+            entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1#为何要-1？
     return torch.tensor(entity_neibor_embedding_list), torch.tensor(entity_neibor_num_list)#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
 
 def build_item2item_dataset(config):
     print("constructing item2item dataset ...")
     fp_train = open(config['data']['train_behavior'], 'r', encoding='utf-8')
-    user_history_dict = {}
-    news_click_dict = {}
-    doc_doc_dict = {}
-    all_news_set = set()
+    user_history_dict = {}#每个用户历史点击的新闻id，包括history和behavior
+    news_click_dict = {}#每个新闻被所有用户点击的总次数
+    doc_doc_dict = {}#两个文档对的共同点击用户数,(doc1,doc2)和(doc2,doc1)是一样的
+    all_news_set = set()#behavior里所有新闻id
     for line in fp_train:
         index, userid, imp_time, history, behavior = line.strip().split('\t')
         behavior = behavior.split(' ')
@@ -419,6 +408,8 @@ def build_item2item_dataset(config):
             user_history_dict[userid] = set()
         for news in behavior:
             newsid, news_label = news.split('-')
+            if newsid=='':
+                continue
             all_news_set.add(newsid)
             if news_label == "1":
                 user_history_dict[userid].add(newsid)
@@ -426,8 +417,10 @@ def build_item2item_dataset(config):
                     news_click_dict[newsid] = 1
                 else:
                     news_click_dict[newsid] = news_click_dict[newsid] + 1
-        news = history.split(' ')
+        news = history.split(' ')#history可能缺失
         for newsid in news:
+            if newsid=='':
+                continue
             user_history_dict[userid].add(newsid)
             if newsid not in news_click_dict:
                 news_click_dict[newsid] = 1
@@ -446,7 +439,7 @@ def build_item2item_dataset(config):
                         doc_doc_dict[(doc1, doc2)] = doc_doc_dict[(doc1, doc2)] + 1
                     elif (doc2, doc1) in doc_doc_dict and (doc1, doc2) not in doc_doc_dict:
                         doc_doc_dict[(doc2, doc1)] = doc_doc_dict[(doc2, doc1)] + 1
-    weight_doc_doc_dict = {}
+    weight_doc_doc_dict = {}#保留为postive instance的条件
     for item in doc_doc_dict:
         if item[0] in news_click_dict and item[1] in news_click_dict:
             weight_doc_doc_dict[item] = doc_doc_dict[item] / math.sqrt(
@@ -470,7 +463,7 @@ def build_item2item_dataset(config):
     fp_train_data = open(config['data']['datapath'] + config['data']['train_file'], 'w', encoding='utf-8')
     fp_valid_data = open(config['data']['datapath'] + config['data']['val_file'], 'w', encoding='utf-8')
     fp_test_data = open(config['data']['datapath'] + config['data']['test_file'], 'w', encoding='utf-8')
-    for item in news_positive_pairs:
+    for item in news_positive_pairs:#这里有个问题，即负例可能是正例
         random_num = random.random()
         if random_num < 0.8:
             fp_train_data.write("1" + '\t' + item[0] + '\t' + item[1] + '\n')
@@ -492,14 +485,9 @@ def build_item2item_dataset(config):
     fp_test_data.close()
 
 
-def build_doc_feature(config):
+def build_doc_feature(config):#包含每个news的doc embedding，以及其包含的entity id
     print("constructing news features ... ")
-    entity2id_dict = {}
-    fp_entity2id = open(config['data']['entity_index'], 'r', encoding='utf-8')
-    entity_num = int(fp_entity2id.readline().split('\n')[0])
-    for line in fp_entity2id.readlines():
-        entity, entityid = line.strip().split('\t')
-        entity2id_dict[entity] = int(entityid) + 1
+
     news_features = {}
 
     news_feature_dict = {}
@@ -526,12 +514,12 @@ def build_doc_feature(config):
         news_features[news] = (sentence_embedding, list(news_entity_feature))
 
     fp_doc_feature_entity = open(config['data']['datapath'] + config['data']['doc_feature_entity_file'], 'w', encoding='utf-8')
-    fp_doc_feature_embedding = open(config['data']['datapath'] + config['data']['val_file'], 'w', encoding='utf-8')
-    for news in news_feature_dict:
+    fp_doc_feature_embedding = open(config['data']['datapath'] + config['data']['doc_feature_embedding_file'], 'w', encoding='utf-8')
+    for news in news_features:
         fp_doc_feature_entity.write(news+'\t')
-        fp_doc_feature_entity.write(' '.join(news_feature_dict[news][1])+'\n')
+        fp_doc_feature_entity.write(' '.join(news_features[news][1])+'\n')
         fp_doc_feature_embedding.write(news + '\t')
-        fp_doc_feature_embedding.write(' '.join(list(map(lambda x:str(x),news_feature_dict[news][0]))) + '\n')
+        fp_doc_feature_embedding.write(' '.join(list(map(lambda x:str(x),news_features[news][0]))) + '\n')
 
     fp_doc_feature_entity.close()
     fp_doc_feature_embedding.close()
