@@ -210,7 +210,7 @@ def build_doc_feature_embedding(config):
     doc_embedding_feature_dict = {}
     for line in fp_doc_feature:
         linesplit = line.split('\n')[0].split('\t')
-        doc_embedding_feature_dict[linesplit[0]] = np.array(linesplit[1].split(' ')).astype(np.float)
+        doc_embedding_feature_dict[linesplit[0]] = torch.tensor(np.array(linesplit[1].split(' ')).astype(np.float), dtype=torch.float32)
     return doc_embedding_feature_dict
 
 def build_network(config):
@@ -267,13 +267,13 @@ def build_network(config):
                 adj[item].append((0, 0))
 
     adj_entity = {}
-    adj_entity[0] = list(map(lambda x:int(x), np.zeros(20)))
+    adj_entity[0] = torch.zeros(20, dtype=torch.long)
     for item in adj:
-        adj_entity[item] = list(map(lambda x:x[0], adj[item]))
+        adj_entity[item] = torch.tensor(list(map(lambda x:x[0], adj[item])), dtype=torch.long)
     adj_relation = {}
-    adj_relation[0] = list(map(lambda x:int(x), np.zeros(20)))
+    adj_relation[0] = torch.zeros(20, dtype=torch.long)
     for item in adj:
-        adj_relation[item] = list(map(lambda x: x[1], adj[item]))
+        adj_relation[item] = torch.tensor(list(map(lambda x: x[1], adj[item])), dtype=torch.long)
     return adj_entity, adj_relation, entity_id_dict, relation_id_dict, network
 
 def build_entity_relation_embedding(config, entity_num, relation_num):
@@ -311,6 +311,8 @@ def load_news_entity(config, entity_id_dict):
         else:
             for i in range(config['model']['news_entity_num']-len(doc2entities[newsid])):#todo
                 doc2entities[newsid].append(0)
+    for item in doc2entities:
+        doc2entities[item] = torch.tensor(doc2entities[item], dtype=torch.long)
     # for item in entity2doc:#对doc数目也要限制？
     #     if len(entity2doc[item])>config['model']['news_entity_num']:
     #         entity2doc[item] = entity2doc[item][:config['model']['news_entity_num']] #todo load entity in titles
@@ -379,20 +381,20 @@ def load_warm_up(config):
     warm_up_data['label'] = label
     return warm_up_data
 
-def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict):#返回的是每个entity连接的doc的embedding的平均值和doc数目-1， 用于计算coherence reward
+def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict):#返回的是每个entity连接的doc的embedding的和和doc数目-1， 用于计算coherence reward
     print('build neiborhood embedding ...')
     entity_num = len(entity_id_dict)
     #每个entity（包括0）的邻居embedding及邻居个数
-    entity_neibor_embedding_list = np.zeros([entity_num+1,768])
-    entity_neibor_num_list = np.ones(entity_num+1, dtype=int)
+    entity_neibor_embedding_list = torch.zeros([entity_num+1, 768],dtype=torch.float32)
+    entity_neibor_num_list = torch.ones(entity_num+1, dtype=torch.long)
     for entity in entity_doc_dict:
-        entity_news_embedding_list = []
-        for news in entity_doc_dict[entity]:
-            entity_news_embedding_list.append(doc_feature_embedding[news])
-        entity_neibor_embedding_list[entity] = np.sum(entity_news_embedding_list, axis=0)
+        entity_news_embedding_list = torch.zeros([len(entity_doc_dict[entity]), 768], dtype=torch.float32)
+        for i, news in enumerate(entity_doc_dict[entity]):
+            entity_news_embedding_list[i] = doc_feature_embedding[news]
+        entity_neibor_embedding_list[entity] = torch.sum(entity_news_embedding_list, dim=0)
         if len(entity_doc_dict[entity])>=2:
-            entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1#为何要-1？
-    return torch.tensor(entity_neibor_embedding_list), torch.tensor(entity_neibor_num_list)#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
+            entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1#为何要-1,排除掉forward里的news本身
+    return entity_neibor_embedding_list, entity_neibor_num_list#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
 
 def build_item2item_dataset(config):
     print("constructing item2item dataset ...")

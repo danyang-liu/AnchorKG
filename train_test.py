@@ -11,9 +11,9 @@ def train(data, config):
 
     warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
     device, deviceids = prepare_device(config['n_gpu'])
-    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, kg_env, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device).to(device)
-    model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device).to(device)
-    model_reasoner = Reasoner(config, kg_env, entity_embedding, relation_embedding, device).to(device)
+    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device)
+    model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device)
+    model_reasoner = Reasoner(config, entity_embedding, relation_embedding, device)
 
 
     criterion = nn.BCEWithLogitsLoss(reduction='none')
@@ -26,20 +26,17 @@ def train(data, config):
     trainer.train()
 
 def test(data, config):
+    logger = config.get_logger('test')
 
     warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
     device, deviceids = prepare_device(config['n_gpu'])
-    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, kg_env, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device)
+    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device)
     model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device)
-    model_reasoner = Reasoner(config, kg_env, entity_embedding, relation_embedding, device)
+    model_reasoner = Reasoner(config, entity_embedding, relation_embedding, device)
     #load model
-    model_anchor.load_state_dict(torch.load('./out/saved/models/AnchorKG/1030_164655/checkpoint-anchor-epoch2.pth', map_location='cpu'))
-    model_recommender.load_state_dict(torch.load('./out/saved/models/AnchorKG/1030_164655/checkpoint-recommender-epoch2.pth', map_location='cpu'))
-    model_reasoner.load_state_dict(torch.load('./out/saved/models/AnchorKG/1030_164655/checkpoint-reasoner-epoch2.pth', map_location='cpu'))
-
-    model_anchor.to(device)
-    model_recommender.to(device)
-    model_reasoner.to(device)
+    model_anchor.load_state_dict(torch.load('./out/saved/models/AnchorKG/1103_152727/checkpoint-anchor.pt'))
+    model_recommender.load_state_dict(torch.load('./out/saved/models/AnchorKG/1103_152727/checkpoint-recommender.pt'))
+    model_reasoner.load_state_dict(torch.load('./out/saved/models/AnchorKG/1103_152727/checkpoint-reasoner.pt'))
    
     #test
     model_anchor.eval()
@@ -48,22 +45,15 @@ def test(data, config):
 
     # get all news embeddings
     doc_list = list(Test_data.keys())
-    print("length: " + str(len(doc_list)))
+    logger.info('len(doc_list) : {}'.format(len(doc_list)))
     start_list = list(range(0, len(doc_list), config['data_loader']['batch_size']))
     doc_embedding = []
     doc_embedding_dict = {}
     for start in start_list:
-        if start +config['data_loader']['batch_size'] <= len(doc_list):
-            end = start + config['data_loader']['batch_size']
-            act_probs_steps1, q_values_steps1, act_probs_steps2, q_values_steps2, step_rewards1, step_rewards2, anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2 = model_anchor(
-                doc_list[start:end], doc_list[start:end])
-            doc_embedding.extend(model_recommender(doc_list[start:end], doc_list[start:end], anchor_graph1, anchor_graph2)[
-                                     1].cpu().data.numpy())
-        else:
-            act_probs_steps1, q_values_steps1, act_probs_steps2, q_values_steps2, step_rewards1, step_rewards2, anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2 = model_anchor(
-                doc_list[start:], doc_list[start:])
-            doc_embedding.extend(model_recommender(doc_list[start:], doc_list[start:], anchor_graph1, anchor_graph2)[
-                                     1].cpu().data.numpy())
+        end = start + config['data_loader']['batch_size']
+        _, _, _, anchor_graph1, _ = model_anchor(doc_list[start:end])
+        doc_embedding.extend(model_recommender(doc_list[start:end], doc_list[start:end], anchor_graph1, anchor_graph1)[1].cpu().data.numpy())
+        
     # knn search topk
     ann = hnswlib.Index(space='cosine', dim=128)
     ann.init_index(max_elements=len(doc_list), ef_construction=200, M=16)
@@ -77,7 +67,9 @@ def test(data, config):
         labels, distances = ann.knn_query(doc_embedding, k=10)
         predict_dict[doc] = list(map(lambda x: doc_list[x], labels[0]))
     # compute metric
-    evaluate(predict_dict, Test_data)
+    avg_precision, avg_recall, avg_ndcg, avg_hit, invalid_users = evaluate(predict_dict, Test_data)
+    logger.info('NDCG={:.3f} |  Recall={:.3f} | HR={:.3f} | Precision={:.3f} | Invalid users={}'.format(avg_ndcg, avg_recall, avg_hit, avg_precision, len(invalid_users)))
+    
 
 
 

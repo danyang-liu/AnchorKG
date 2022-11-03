@@ -7,21 +7,20 @@ from base.base_model import BaseModel
 
 class Reasoner(BaseModel):
 
-    def __init__(self, config, kg_env_all, entity_embedding, relation_embedding, device=torch.device('cpu')):
+    def __init__(self, config, entity_embedding, relation_embedding, device=torch.device('cpu')):
         super(Reasoner, self).__init__()
         self.device = device
         self.config = config
-        self.kg_env_all = kg_env_all
         self.tanh = nn.Tanh()
-        self.gru = torch.nn.GRU(self.config['model']['embedding_size'], self.config['model']['embedding_size'])
+        self.gru = torch.nn.GRU(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
         self.sigmoid = nn.Sigmoid()
         self.elu = nn.ELU()
-        self.gru_output_layer1 = nn.Linear(self.config['model']['embedding_size'],self.config['model']['embedding_size'])
-        self.gru_output_layer2 = nn.Linear(self.config['model']['embedding_size'],1)
+        self.gru_output_layer1 = nn.Linear(self.config['model']['embedding_size'],self.config['model']['embedding_size']).to(device)
+        self.gru_output_layer2 = nn.Linear(self.config['model']['embedding_size'],1).to(device)
         self.entity_embedding = nn.Embedding.from_pretrained(entity_embedding)
         self.relation_embedding = nn.Embedding.from_pretrained(relation_embedding)
-        self.entity_compress = nn.Linear(100, self.config['model']['embedding_size'])
-        self.relation_compress = nn.Linear(100, self.config['model']['embedding_size'])
+        self.entity_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
+        self.relation_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
 
     def get_overlap_entities(self, anchor_graph1, anchor_graph2):
         overlap_entity_num = []
@@ -60,14 +59,14 @@ class Reasoner(BaseModel):
         for paths in reasoning_paths:
             predict_scores.append([0])
             for path in paths:
-                path_node_embeddings = self.tanh(self.entity_compress(self.entity_embedding(torch.tensor(path).to(self.device))))
+                path_node_embeddings = self.tanh(self.entity_compress(self.entity_embedding(torch.tensor(path)).to(self.device)))
                 if len(path_node_embeddings.shape) == 1:
                     path_node_embeddings = torch.unsqueeze(path_node_embeddings, 0)
                 path_node_embeddings = torch.unsqueeze(path_node_embeddings, 1)
                 output, h_n = self.gru(path_node_embeddings)
                 path_score = (self.gru_output_layer2(self.elu(self.gru_output_layer1(torch.squeeze(output[-1])))))
                 predict_scores[-1].append(path_score)
-            predict_scores[-1] = torch.sum(torch.tensor(predict_scores[-1]).to(self.device)).float()
+            predict_scores[-1] = torch.sum(predict_scores[-1]).float()
         return torch.stack(predict_scores).to(self.device)
 
     def get_reasoning_paths(self, news1, news2, anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2, overlap_entity_num_cpu):
@@ -107,19 +106,18 @@ class Reasoner(BaseModel):
 
         anchor_graph_list1_flat, anchor_graph_list1 = self.get_anchor_graph_list(anchor_graph1, len(news1))
         anchor_graph_list2_flat, anchor_graph_list2 = self.get_anchor_graph_list(anchor_graph2, len(news2))
-        overlap_entity_num, anchor_graph1_num, anchor_graph2_num, overlap_entity_num_cpu = self.get_overlap_entities(anchor_graph_list1_flat,
-                                                                                             anchor_graph_list2_flat)
+        overlap_entity_num, anchor_graph1_num, anchor_graph2_num, overlap_entity_num_cpu = self.get_overlap_entities(anchor_graph_list1_flat, anchor_graph_list2_flat)
         reasoning_paths, reasoning_edges = self.get_reasoning_paths(news1, news2, anchor_graph_list1, anchor_graph_list2, anchor_relation1, anchor_relation2, overlap_entity_num_cpu)
         predict_scores = []
         paths_scores = []
         for i in range(len(reasoning_paths)):
             paths = reasoning_paths[i]
             edges = reasoning_edges[i]
-            predict_scores.append([])
+            predict_scores.append(torch.zeros([1]).to(self.device))
             paths_scores.append([])
             for j in range(len(paths)):
-                path_node_embeddings = self.tanh(self.entity_compress(self.entity_embedding(torch.tensor(paths[j]).to(self.device))))
-                path_edge_embeddings = self.tanh(self.relation_compress(self.relation_embedding(torch.tensor(edges[j]).to(self.device))))
+                path_node_embeddings = self.tanh(self.entity_compress(self.entity_embedding(torch.tensor(paths[j])).to(self.device)))
+                path_edge_embeddings = self.tanh(self.relation_compress(self.relation_embedding(torch.tensor(edges[j])).to(self.device)))
                 if len(path_node_embeddings.shape) == 1:
                     path_node_embeddings = torch.unsqueeze(path_node_embeddings, 0)
                     path_edge_embeddings = torch.unsqueeze(path_edge_embeddings, 0)
@@ -127,11 +125,10 @@ class Reasoner(BaseModel):
                 path_edge_embeddings = torch.unsqueeze(path_edge_embeddings, 1)
                 output, h_n = self.gru(path_node_embeddings+path_edge_embeddings)
                 path_score = self.sigmoid(self.gru_output_layer2(self.elu(self.gru_output_layer1(torch.squeeze(output[-1])))))
-                predict_scores[-1].append(path_score)
+                predict_scores[-1] = predict_scores[-1] + path_score
                 paths_scores[-1].append(path_score)
-            predict_scores[-1] = torch.sum(torch.tensor(predict_scores[-1]).to(self.device)).float()
-        paths_predict_socre = torch.stack(predict_scores).to(self.device)
-        predicts_qua = self.tanh(torch.div(paths_predict_socre, (torch.log((np.e+anchor_graph1_num+anchor_graph2_num).float()))))
-        predicts_num = self.tanh(torch.div(overlap_entity_num, (torch.log((np.e+anchor_graph1_num+anchor_graph2_num).float()))))
+        paths_predict_score = torch.cat(predict_scores, dim=0)
+        predicts_qua = self.tanh(torch.div(paths_predict_score, (torch.log((torch.e+anchor_graph1_num+anchor_graph2_num).to(torch.float32)))))
+        predicts_num = self.tanh(torch.div(overlap_entity_num, (torch.log((torch.e+anchor_graph1_num+anchor_graph2_num).to(torch.float32)))))
         predicts = 0.8*predicts_qua + 0.2*predicts_num
         return predicts, reasoning_paths,reasoning_edges, paths_scores

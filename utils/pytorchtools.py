@@ -3,7 +3,7 @@ import torch
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False, delta=0):
+    def __init__(self, checkpoint_dir, patience=7, delta=0):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
@@ -14,20 +14,19 @@ class EarlyStopping:
                             Default: 0
         """
         self.patience = patience
-        self.verbose = verbose
+        self.checkpoint_dir = checkpoint_dir
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
         self.delta = delta
 
-    def __call__(self, val_loss, model):
+    def __call__(self, val_loss, model_anchor, model_recommender ,model_reasoner):
 
         score = val_loss
 
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model_anchor, model_recommender, model_reasoner)
         elif score <= self.best_score - self.delta:
             self.counter += 1
             #print('EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -35,13 +34,20 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model_anchor, model_recommender, model_reasoner)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model):
+    def save_checkpoint(self, val_loss, model_anchor, model_recommender ,model_reasoner):
         '''Saves model when validation loss decrease.'''
-        if self.verbose:
-            pass
-           # print('Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
-        torch.save(model.state_dict(), 'checkpoint.pt')
-        self.val_loss_min = val_loss
+        state_anchor = model_anchor.state_dict()
+        state_recommender = model_recommender.state_dict()
+        state_reasoner = model_reasoner.state_dict()
+        filename_anchor = str(self.checkpoint_dir / 'checkpoint-anchor.pt')
+        torch.save(state_anchor, filename_anchor)
+        #self.logger.info("Saving checkpoint: {} ...".format(filename_anchor))
+        filename_recommender = str(self.checkpoint_dir / 'checkpoint-recommender.pt')
+        torch.save(state_recommender, filename_recommender)
+        #self.logger.info("Saving checkpoint: {} ...".format(filename_recommender))
+        filename_reasoner = str(self.checkpoint_dir / 'checkpoint-reasoner.pt')
+        torch.save(state_reasoner, filename_reasoner)
+        #self.logger.info("Saving checkpoint: {} ...".format(filename_reasoner))
