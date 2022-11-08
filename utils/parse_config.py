@@ -4,9 +4,8 @@ from pathlib import Path
 from functools import reduce, partial
 from operator import getitem
 from datetime import datetime
-from logger.logger import setup_logging
+from utils.logger import setup_logging
 from utils.util import read_json, write_json
-import yaml
 
 
 class ConfigParser:
@@ -24,13 +23,23 @@ class ConfigParser:
         self.resume = resume
 
         # set save_dir where trained model and log will be saved.
-        save_dir = Path(self.config['trainer']['save_dir'])
+        save_dir = Path(self.config['save_dir'])
 
         exper_name = self.config['name']
         if run_id is None:  # use timestamp as default run-id
             run_id = datetime.now().strftime(r'%m%d_%H%M%S')
-        self._save_dir = save_dir / 'models' / exper_name / run_id
-        self._log_dir = save_dir / 'log' / exper_name / run_id
+        
+        if config['use_nni']:
+            import nni
+            self._save_dir = save_dir / 'models' / exper_name / nni.get_experiment_id() / (nni.get_trial_id()+"-"+run_id)
+            self._log_dir = save_dir / 'log' / exper_name / nni.get_experiment_id() / (nni.get_trial_id()+"-"+run_id)
+            tuner_params = nni.get_next_parameter()
+            for key, value in tuner_params.items():
+                self._config[key] = value
+
+        else:
+            self._save_dir = save_dir / 'models' / exper_name / run_id
+            self._log_dir = save_dir / 'log' / exper_name / run_id
 
         # make directory for saving checkpoints and log.
         exist_ok = run_id == ''
@@ -69,12 +78,14 @@ class ConfigParser:
             resume = None
             cfg_fname = Path(args.config)
 
-        #config = read_json(cfg_fname)
-        fp_yaml =  open('./config.yaml')
-        config = yaml.load(fp_yaml,Loader=yaml.FullLoader)
+        config = read_json(cfg_fname)
+        # fp_yaml =  open(cfg_fname, 'r')
+        # config = yaml.load(fp_yaml,Loader=yaml.FullLoader)
         if args.config and resume:
             # update new config for fine-tuning
             config.update(read_json(args.config))
+
+        config['use_nni'] = True if args.use_nni else False
 
         # parse custom cli options into dictionary
         modification = {opt.target: getattr(args, _get_opt_name(opt.flags)) for opt in options}

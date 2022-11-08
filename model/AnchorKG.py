@@ -13,13 +13,13 @@ class Net(BaseModel):
         self.doc_feature_embedding = doc_feature_embedding
         self.entityid_dict = entityid_dict
 
-        self.actor_l1 = nn.Linear(self.config['model']['embedding_size']*3, self.config['model']['embedding_size'])
-        self.actor_l2 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size'])
-        self.actor_l3 = nn.Linear(self.config['model']['embedding_size'],1)
+        self.actor_l1 = nn.Linear(self.config['embedding_size']*3, self.config['embedding_size'])
+        self.actor_l2 = nn.Linear(self.config['embedding_size'], self.config['embedding_size'])
+        self.actor_l3 = nn.Linear(self.config['embedding_size'],1)
 
-        self.critic_l1 = nn.Linear(self.config['model']['embedding_size']*3, self.config['model']['embedding_size'])
-        self.critic_l2 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size'])
-        self.critic_l3 = nn.Linear(self.config['model']['embedding_size'], 1)
+        #self.critic_l1 = nn.Linear(self.config['embedding_size']*3, self.config['embedding_size'])
+        self.critic_l2 = nn.Linear(self.config['embedding_size'], self.config['embedding_size'])
+        self.critic_l3 = nn.Linear(self.config['embedding_size'], 1)
 
         self.elu = torch.nn.ELU(inplace=False)
         self.sigmoid = torch.nn.Sigmoid()
@@ -71,22 +71,31 @@ class AnchorKG(BaseModel):
         self.neibor_num = neibor_num.to(device)
 
         self.elu = nn.ELU()
-        self.sigmoid = nn.Sigmoid()
         self.cos = nn.CosineSimilarity(dim=-1)
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax()
 
         self.entity_embedding = nn.Embedding.from_pretrained(entity_embedding)
         self.relation_embedding = nn.Embedding.from_pretrained(relation_embedding)
-        self.news_compress_1 = nn.Linear(self.config['model']['doc_embedding_size'],self.config['model']['embedding_size']).to(device)
-        self.news_compress_2 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
-        self.entity_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
-        self.relation_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
-        #self.innews_relation = nn.Embedding(1,self.config['model']['embedding_size']).to(device)
+        self.news_compress = nn.Sequential(
+                                nn.Linear(self.config['doc_embedding_size'], self.config['embedding_size']),
+                                nn.ELU(),
+                                nn.Linear(self.config['embedding_size'], self.config['embedding_size']),
+                                nn.Tanh()
+                            ).to(device)
+        self.entity_compress =  nn.Sequential(
+                                    nn.Linear(100, self.config['embedding_size']),
+                                    nn.Tanh(),
+                                ).to(device)
+        self.relation_compress = nn.Sequential(
+                                    nn.Linear(100, self.config['embedding_size']),
+                                    nn.Tanh(),
+                                ).to(device)
+        #self.innews_relation = nn.Embedding(1,self.config['embedding_size']).to(device)
 
-        self.anchor_embedding_layer = nn.Linear(self.config['model']['embedding_size'],self.config['model']['embedding_size']).to(device)#todo *2 diyige
-        self.anchor_weighs1_layer1 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
-        self.anchor_weighs1_layer2 = nn.Linear(self.config['model']['embedding_size'], 1).to(device)
+        self.anchor_embedding_layer = nn.Linear(self.config['embedding_size'],self.config['embedding_size']).to(device)#todo *2 diyige
+        self.anchor_weighs1_layer1 = nn.Linear(self.config['embedding_size'], self.config['embedding_size']).to(device)
+        self.anchor_weighs1_layer2 = nn.Linear(self.config['embedding_size'], 1).to(device)
 
         self.policy_net = Net(self.config, self.entity_id_dict, self.doc_feature_embedding, device).to(device)
         #self.target_net = Net(self.config, self.entity_id_dict, self.doc_feature_embedding, device).to(device)
@@ -147,15 +156,15 @@ class AnchorKG(BaseModel):
         return reward
 
     def get_news_entities_batch(self, newsids):#当前news里包含的entity
-        news_entities = torch.zeros(len(newsids), self.config['model']['news_entity_num'], dtype=torch.long)
-        news_relations = torch.zeros(len(newsids), self.config['model']['news_entity_num'], dtype=torch.long)#专门用一个innews_relation去学未必效果好
+        news_entities = torch.zeros(len(newsids), self.config['news_entity_num'], dtype=torch.long)
+        news_relations = torch.zeros(len(newsids), self.config['news_entity_num'], dtype=torch.long)#专门用一个innews_relation去学未必效果好
         for i in range(len(newsids)):
             news_entities[i] = self.doc_entity_dict[newsids[i]]
-            # news_relations.append([0 for k in range(self.config['model']['news_entity_num'])])
+            # news_relations.append([0 for k in range(self.config['news_entity_num'])])
         return news_entities, news_relations
 
     def get_news_embedding_batch(self, newsids):#(batch, 768)
-        news_embeddings = torch.zeros([len(newsids), self.config['model']['doc_embedding_size']])
+        news_embeddings = torch.zeros([len(newsids), self.config['doc_embedding_size']])
         for i, newsid in enumerate(newsids):
             news_embeddings[i] = self.doc_feature_embedding[newsid]
         return news_embeddings.to(self.device)
@@ -237,8 +246,8 @@ class AnchorKG(BaseModel):
         if depth == 0:
             state_embedding = torch.cat([news_embedding, torch.zeros([news_embedding.shape[0], 128], dtype=torch.float32).to(self.device)], dim=-1)
         else:
-            history_entity_embedding = self.tanh(self.entity_compress(self.entity_embedding(history_entity_1.to('cpu')).to(self.device)))
-            history_relation_embedding = self.tanh(self.relation_compress(self.relation_embedding(history_relation_1.to('cpu')).to(self.device)))
+            history_entity_embedding = self.entity_compress(self.entity_embedding(history_entity_1.to('cpu')).to(self.device))
+            history_relation_embedding = self.relation_compress(self.relation_embedding(history_relation_1.to('cpu')).to(self.device))
             state_embedding_new = history_relation_embedding + history_entity_embedding
             state_embedding_new = torch.mean(state_embedding_new, dim=1, keepdim=False)
             state_embedding = torch.cat([news_embedding, state_embedding_new], dim=-1)
@@ -270,8 +279,8 @@ class AnchorKG(BaseModel):
                 anchor_graph_nodes.append(anchor_graph[i][j])
         anchor_graph_nodes = torch.tensor(anchor_graph_nodes)
         neibor_entities, neibor_relations = self.get_neighbors(anchor_graph_nodes)
-        neibor_entities_embedding = self.tanh(self.entity_compress(self.entity_embedding(neibor_entities).to(self.device)))
-        neibor_relations_embedding = self.tanh(self.relation_compress(self.relation_embedding(neibor_relations).to(self.device)))
+        neibor_entities_embedding = self.entity_compress(self.entity_embedding(neibor_entities).to(self.device))
+        neibor_relations_embedding = self.relation_compress(self.relation_embedding(neibor_relations).to(self.device))
         anchor_embedding = torch.cat([anchor_graph_nodes, torch.sum(neibor_entities_embedding+neibor_relations_embedding, dim=-2)])
         anchor_embedding = self.tanh(self.anchor_embedding_layer(anchor_embedding))
         anchor_embedding_weight = self.softmax(self.anchor_weighs1_layer2(self.elu(self.anchor_weighs1_layer1(anchor_embedding))))
@@ -300,18 +309,18 @@ class AnchorKG(BaseModel):
         q_values_steps1 = []#价值网络确定的动作价值
 
         news_embedding_origin = self.get_news_embedding_batch(news1)#(batch, 768)
-        news_embedding = self.tanh(self.news_compress_2(self.elu(self.news_compress_1(news_embedding_origin))))#(batch, 128)
+        news_embedding = self.news_compress(news_embedding_origin)#(batch, 128)
         
         action_id, relation_id = self.get_news_entities_batch(news1)#当前news里包含的实体和关系,这里关系恒取id=0, cpu
-        action_embedding = self.tanh(self.entity_compress(self.entity_embedding(action_id).to(self.device)))#(batch, 20, 128)
-        relation_embedding = self.tanh(self.relation_compress(self.relation_embedding(relation_id).to(self.device)))
+        action_embedding = self.entity_compress(self.entity_embedding(action_id).to(self.device))#(batch, 20, 128)
+        relation_embedding = self.relation_compress(self.relation_embedding(relation_id).to(self.device))
         action_embedding = action_embedding + relation_embedding#动作集合的表征,(batch, 20, 128)
         
         state_input = self.get_state_input(news_embedding, depth, anchor_graph1, history_entity_1, history_relation_1)#(batch,256)
 
         while (depth < self.MAX_DEPTH):
             act_probs, q_values = self.policy_net(state_input, action_embedding)#output: (batch, 20, 1), (batch, 20, 1)
-            topk = self.config['model']['topk'][depth]
+            topk = self.config['topk'][depth]
             anchor_act_probs, anchor_q_values, anchor_nodes, anchor_relations = self.get_anchor_nodes(act_probs, q_values, action_id.to(self.device), relation_id.to(self.device), topk)#做动作
             history_entity_1 = anchor_nodes#anchor_nodes即最新加入的实体
             history_relation_1 = anchor_relations
@@ -323,7 +332,7 @@ class AnchorKG(BaseModel):
             actionid_lookup, action_rid_lookup = self.get_next_action(anchor_nodes)#下一步可以扩展的(r,e)集合, (batch, 5, 20) / (batch, 5*3, 20)
             action_id = actionid_lookup
             relation_id = action_rid_lookup
-            action_embedding = self.tanh(self.entity_compress(self.entity_embedding(action_id).to(self.device))) + self.tanh(self.relation_compress(self.relation_embedding(relation_id).to(self.device)))
+            action_embedding = self.entity_compress(self.entity_embedding(action_id).to(self.device)) + self.relation_compress(self.relation_embedding(relation_id).to(self.device))
 
             anchor_graph1.append(anchor_nodes)#gpu
             anchor_relation1.append(anchor_relations)
@@ -331,4 +340,31 @@ class AnchorKG(BaseModel):
             step_rewards1.append(step_reward)
 
         return act_probs_steps1, q_values_steps1, step_rewards1, anchor_graph1, anchor_relation1 #仅act_probs_steps1, q_values_steps1有有效梯度
+
+    def warm_train(self, batch):
+        loss_fn = nn.BCELoss()
+        news_embedding = self.get_news_embedding_batch(batch['item1'])
+        news_embedding = self.news_compress(news_embedding)
+        path_node_embeddings = self.entity_compress(self.entity_embedding(batch['paths']).to(self.device))#(batch, depth, embedding_size)
+        path_edge_embeddings = self.relation_compress(self.relation_embedding(batch['edges']).to(self.device))#(batch, depth, embedding_size)
+        path_embeddings = path_node_embeddings + path_edge_embeddings#(batch, depth, 128)
+
+        batch_act_probs=[]
+        history_entity=[]
+        history_relation=[]
+        for i in range(self.MAX_DEPTH):
+            state_input = self.get_state_input(news_embedding, i, [], history_entity, history_relation)#(batch,256)
+            act_probs, _ = self.policy_net(state_input, path_embeddings[:,i,:])#(batch, 1)
+            batch_act_probs.append(act_probs)
+            history_entity = batch['paths'][:, i:i+1]#此处遵从forward里的实现，即只用最新加入的节点来进行下一个state_input的计算
+            history_relation = batch['edges'][:, i:i+1]
+        
+        batch_act_probs = torch.cat(batch_act_probs, dim=1)#(batch, depth)
+        indices = batch['label']>=-0.5
+        labels = batch['label'][indices].to(self.device)
+        predicts = batch_act_probs[indices.to(self.device)]
+        loss = loss_fn(predicts, labels)
+
+        return loss, predicts, labels
+        
 

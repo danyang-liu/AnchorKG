@@ -1,0 +1,54 @@
+{
+    "name": "AnchorKG",
+    "n_gpu": 1,
+
+    "batch_size": 128,
+    "shuffle": true,
+    "num_workers": 0,
+
+    "datapath": "./data",
+    "save_dir": "./out/saved/",
+    "train_news": "/train/news.tsv",
+    "train_behavior": "/train/behaviors.tsv",
+    "valid_news": "/valid/news.tsv",
+    "valid_behavior": "/valid/behaviors.tsv",
+    "warm_up_train_file": "/KPRN/predict_train.json",
+    "warm_up_dev_file": "/KPRN/predict_dev.json",
+    "train_file": "/item2item/train.tsv",
+    "val_file": "/item2item/valid.tsv",
+    "test_file": "/item2item/test.tsv",
+    "doc_feature_entity_file": "/doc_feature_entity.tsv",
+    "doc_feature_embedding_file": "/doc_feature_embedding.tsv",
+    "kg_file": "/kg/wikidata-graph/wikidata-graph.tsv",
+    "entity_embedding_file": "/kg/wikidata-graph/entity2vecd100.vec",
+    "relation_embedding_file": "/kg/wikidata-graph/relation2vecd100.vec",
+    "entity2id_file": "/kg/wikidata-graph/entity2id.txt",
+    "relation2id_file": "/kg/wikidata-graph/relation2id.txt",
+    
+    "doc_embedding_size": 768,
+    "embedding_size": 128,
+    "news_entity_num": 20,
+    "alpha1": 0.9,
+    "alpha2": 0.9,
+    "beta": 0.2,
+    "topk": [
+        5,
+        3,
+        2
+    ],
+    "gamma": 0.9,
+
+    "epochs": 20,
+    "warm_up": true,
+    "train_neg_num": 4,
+    "save_period": 1,
+    "early_stop": 5,
+    "monitor": "val_auc",
+    "verbosity": 2,
+    "seed": 2022,
+
+    "type": "Adam",
+    "lr": 2e-05,
+    "weight_decay": 1e-06,
+    "amsgrad": true
+}

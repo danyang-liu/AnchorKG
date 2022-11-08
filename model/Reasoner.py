@@ -12,15 +12,15 @@ class Reasoner(BaseModel):
         self.device = device
         self.config = config
         self.tanh = nn.Tanh()
-        self.gru = torch.nn.GRU(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
+        self.gru = torch.nn.GRU(self.config['embedding_size'], self.config['embedding_size']).to(device)
         self.sigmoid = nn.Sigmoid()
         self.elu = nn.ELU()
-        self.gru_output_layer1 = nn.Linear(self.config['model']['embedding_size'],self.config['model']['embedding_size']).to(device)
-        self.gru_output_layer2 = nn.Linear(self.config['model']['embedding_size'],1).to(device)
+        self.gru_output_layer1 = nn.Linear(self.config['embedding_size'],self.config['embedding_size']).to(device)
+        self.gru_output_layer2 = nn.Linear(self.config['embedding_size'],1).to(device)
         self.entity_embedding = nn.Embedding.from_pretrained(entity_embedding)
         self.relation_embedding = nn.Embedding.from_pretrained(relation_embedding)
-        self.entity_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
-        self.relation_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
+        self.entity_compress = nn.Linear(100, self.config['embedding_size']).to(device)
+        self.relation_compress = nn.Linear(100, self.config['embedding_size']).to(device)
 
     def get_overlap_entities(self, anchor_graph1, anchor_graph2):
         overlap_entity_num = []
@@ -75,21 +75,21 @@ class Reasoner(BaseModel):
         for i in range(len(news1)):
             if overlap_entity_num_cpu[i]>0:
                 subgraph = nx.MultiGraph()
-                for index1 in range(self.config['model']['topk'][0]):
+                for index1 in range(self.config['topk'][0]):
                     if anchor_graph1[i][0][index1] != 0:
                         subgraph.add_edge(news1[i], anchor_graph1[i][0][index1], weight=0)
                     if anchor_graph2[i][0][index1] != 0:
                         subgraph.add_edge(news2[i], anchor_graph2[i][0][index1], weight=0)
-                    for index2 in range(self.config['model']['topk'][1]):
-                        if anchor_graph1[i][1][index1*self.config['model']['topk'][1]+index2] != 0:
-                            subgraph.add_edge(anchor_graph1[i][0][index1], anchor_graph1[i][1][index1*self.config['model']['topk'][1]+index2], weight=anchor_relation1[1][i][index1*self.config['model']['topk'][1]+index2])
-                        if anchor_graph2[i][1][index1*self.config['model']['topk'][1]+index2] != 0:
-                            subgraph.add_edge(anchor_graph2[i][0][index1], anchor_graph2[i][1][index1*self.config['model']['topk'][1]+index2], weight=anchor_relation2[1][i][index1*self.config['model']['topk'][1]+index2])
-                        for index3 in range(self.config['model']['topk'][2]):
-                            if anchor_graph1[i][2][index1*self.config['model']['topk'][1]*self.config['model']['topk'][2]+index2*self.config['model']['topk'][2]+index3] != 0:
-                                subgraph.add_edge(anchor_graph1[i][1][index1*self.config['model']['topk'][1]+index2], anchor_graph1[i][2][index1*self.config['model']['topk'][1]*self.config['model']['topk'][2]+index2*self.config['model']['topk'][2]+index3], weight=anchor_relation1[2][i][index1*self.config['model']['topk'][1]*self.config['model']['topk'][2]+index2*self.config['model']['topk'][2]+index3])
-                            if anchor_graph2[i][2][index1*self.config['model']['topk'][1]*self.config['model']['topk'][2]+index2*self.config['model']['topk'][2]+index3] != 0:
-                                subgraph.add_edge(anchor_graph2[i][1][index1*self.config['model']['topk'][1]+index2], anchor_graph2[i][2][index1*self.config['model']['topk'][1]*self.config['model']['topk'][2]+index2*self.config['model']['topk'][2]+index3], weight=anchor_relation2[2][i][index1*self.config['model']['topk'][1]*self.config['model']['topk'][2]+index2*self.config['model']['topk'][2]+index3])
+                    for index2 in range(self.config['topk'][1]):
+                        if anchor_graph1[i][1][index1*self.config['topk'][1]+index2] != 0:
+                            subgraph.add_edge(anchor_graph1[i][0][index1], anchor_graph1[i][1][index1*self.config['topk'][1]+index2], weight=anchor_relation1[1][i][index1*self.config['topk'][1]+index2])
+                        if anchor_graph2[i][1][index1*self.config['topk'][1]+index2] != 0:
+                            subgraph.add_edge(anchor_graph2[i][0][index1], anchor_graph2[i][1][index1*self.config['topk'][1]+index2], weight=anchor_relation2[1][i][index1*self.config['topk'][1]+index2])
+                        for index3 in range(self.config['topk'][2]):
+                            if anchor_graph1[i][2][index1*self.config['topk'][1]*self.config['topk'][2]+index2*self.config['topk'][2]+index3] != 0:
+                                subgraph.add_edge(anchor_graph1[i][1][index1*self.config['topk'][1]+index2], anchor_graph1[i][2][index1*self.config['topk'][1]*self.config['topk'][2]+index2*self.config['topk'][2]+index3], weight=anchor_relation1[2][i][index1*self.config['topk'][1]*self.config['topk'][2]+index2*self.config['topk'][2]+index3])
+                            if anchor_graph2[i][2][index1*self.config['topk'][1]*self.config['topk'][2]+index2*self.config['topk'][2]+index3] != 0:
+                                subgraph.add_edge(anchor_graph2[i][1][index1*self.config['topk'][1]+index2], anchor_graph2[i][2][index1*self.config['topk'][1]*self.config['topk'][2]+index2*self.config['topk'][2]+index3], weight=anchor_relation2[2][i][index1*self.config['topk'][1]*self.config['topk'][2]+index2*self.config['topk'][2]+index3])
                 reasoning_paths.append([])
                 reasoning_edges.append([])
                 for path in nx.all_simple_paths(subgraph, source=news1[i], target=news2[i], cutoff=5):

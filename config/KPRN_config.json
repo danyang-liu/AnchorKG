@@ -1,0 +1,27 @@
+{
+    "name": "KPRN",
+    "n_gpu": 1,
+    "datapath": "./data",
+    "save_dir": "./out/saved/",
+    "KPRN_train_file": "/KPRN/train_data.json",
+    "KPRN_val_file": "/KPRN/dev_data.json",
+    "KPRN_predict_train_file": "/KPRN/predict_train.json",
+    "KPRN_predict_dev_file": "/KPRN/predict_dev.json",
+    "doc_feature_embedding_file": "/doc_feature_embedding.tsv",
+
+    "doc_embedding_size": 768,
+    "embedding_size": 128,
+    "news_entity_num": 20,
+    "gamma": 1.0,
+    
+    "batch_size": 128,   
+    "epochs": 10,
+    "train_neg_num": 4,
+    "early_stop": 3,
+    "verbosity": 2,
+    "seed": 2022,
+    
+    "lr": 2e-03,
+    "weight_decay": 1e-06,
+    "warmup_ratio": 0.1
+}

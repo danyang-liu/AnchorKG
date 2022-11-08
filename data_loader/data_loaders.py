@@ -1,7 +1,6 @@
-from base.base_data_loader import BaseDataLoader
-from torch.utils.data import Dataset, DataLoader, RandomSampler
+from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from utils.util import *
-import time
+from KPRN_train import KPRN_Dataset
 
 class NewsDataset(Dataset):
     def __init__(self, dic_data, transform=None):
@@ -15,18 +14,6 @@ class NewsDataset(Dataset):
         sample = {'item1': self.dic_data['item1'][idx], 'item2': self.dic_data['item2'][idx], 'label': self.dic_data['label'][idx]}
         return sample
 
-class NewsDataLoader(BaseDataLoader):
-    """
-        News data loading using BaseDataLoader
-    """
-    def __init__(self, dataset, batch_size, shuffle=True, num_workers = 1):
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-        self.num_workers = num_workers
-        super().__init__(self.dataset, batch_size, shuffle, num_workers)
-
-
 
 def load_data(config):
 
@@ -35,42 +22,83 @@ def load_data(config):
     Test_data = build_test(config)
     doc_feature_embedding = build_doc_feature_embedding(config)
 
-    if os.path.exists(config['data']['datapath']+"/cache/kg_env.gpickle"):
-        entity_adj = torch.load(config['data']['datapath']+"/cache/entity_adj.pt")
-        relation_adj = torch.load(config['data']['datapath']+"/cache/relation_adj.pt")
-        entity_id_dict = np.load(config['data']['datapath']+"/cache/entity_id_dict.npy", allow_pickle=True).item()
-        relation_id_dict = np.load(config['data']['datapath']+"/cache/relation_id_dict.npy", allow_pickle=True).item()
-        kg_env = None #nx.read_gpickle(config['data']['datapath']+"/cache/kg_env.gpickle")
-        entity_embedding = torch.load(config['data']['datapath']+"/cache/entity_embedding.pt")
-        relation_embedding = torch.load(config['data']['datapath']+"/cache/relation_embedding.pt")
+    if os.path.exists(config['datapath']+"/cache/kg_env.gpickle"):
+        entity_adj = torch.load(config['datapath']+"/cache/entity_adj.pt")
+        relation_adj = torch.load(config['datapath']+"/cache/relation_adj.pt")
+        entity_id_dict = np.load(config['datapath']+"/cache/entity_id_dict.npy", allow_pickle=True).item()
+        relation_id_dict = np.load(config['datapath']+"/cache/relation_id_dict.npy", allow_pickle=True).item()
+        kg_env = None #nx.read_gpickle(config['datapath']+"/cache/kg_env.gpickle")
+        entity_embedding = torch.load(config['datapath']+"/cache/entity_embedding.pt")
+        relation_embedding = torch.load(config['datapath']+"/cache/relation_embedding.pt")
     else:
         entity_adj, relation_adj, entity_id_dict, relation_id_dict, kg_env = build_network(config)
         entity_embedding, relation_embedding = build_entity_relation_embedding(config, len(entity_id_dict), len(relation_id_dict))
-        os.makedirs(config['data']['datapath']+"/cache", exist_ok=True)
-        torch.save(entity_adj, config['data']['datapath']+"/cache/entity_adj.pt")
-        torch.save(relation_adj, config['data']['datapath']+"/cache/relation_adj.pt")
-        np.save(config['data']['datapath']+"/cache/entity_id_dict.npy", entity_id_dict)
-        np.save(config['data']['datapath']+"/cache/relation_id_dict.npy", relation_id_dict)
-        nx.write_gpickle(kg_env, config['data']['datapath']+"/cache/kg_env.gpickle")
-        torch.save(entity_embedding, config['data']['datapath']+"/cache/entity_embedding.pt")
-        torch.save(relation_embedding, config['data']['datapath']+"/cache/relation_embedding.pt")
+        os.makedirs(config['datapath']+"/cache", exist_ok=True)
+        torch.save(entity_adj, config['datapath']+"/cache/entity_adj.pt")
+        torch.save(relation_adj, config['datapath']+"/cache/relation_adj.pt")
+        np.save(config['datapath']+"/cache/entity_id_dict.npy", entity_id_dict)
+        np.save(config['datapath']+"/cache/relation_id_dict.npy", relation_id_dict)
+        nx.write_gpickle(kg_env, config['datapath']+"/cache/kg_env.gpickle")
+        torch.save(entity_embedding, config['datapath']+"/cache/entity_embedding.pt")
+        torch.save(relation_embedding, config['datapath']+"/cache/relation_embedding.pt")
 
     doc_entity_dict, entity_doc_dict = load_news_entity(config, entity_id_dict)
     neibor_embedding, neibor_num = build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict)
-    hit_dict = build_hit_dict(config)    
-    train_data = NewsDataset(Train_data)
-    train_dataloader = DataLoader(train_data, batch_size=config['data_loader']['batch_size'])
+    hit_dict = build_hit_dict(config)
+    train_dataset = NewsDataset(Train_data)
+    train_dataloader = DataLoader(
+        dataset=train_dataset, 
+        batch_size=config['batch_size'],
+        sampler=RandomSampler(train_dataset),
+        num_workers=config['num_workers'],
+    )
 
-    if config['trainer']['warm_up']:
-        warm_up_train_data = load_warm_up(config)
-        warm_up_test_data = load_warm_up(config)
-        warmup_train_data = NewsDataset(warm_up_train_data)
-        warmup_train_dataloader = DataLoader(warmup_train_data, batch_size=config['data_loader']['batch_size'])
+    if config['warm_up']:
+        with open(config['datapath']+config['warm_up_train_file'], "r") as f:
+            warmup_train_data = [json.loads(line) for line in f.readlines()]
+        with open(config['datapath']+config['warm_up_dev_file'], "r") as f:
+            warmup_dev_data = [json.loads(line) for line in f.readlines()]
+        
+        warmup_train_dataset = KPRN_Dataset(warmup_train_data)
+        warmup_dev_dataset = KPRN_Dataset(warmup_dev_data)
+
+
+        def collate_fn(data):
+            batch = {'label':[], 'item1':[], 'item2':[], 'paths':[], 'edges':[]}
+            for item in data:
+                path_len = len(item['paths'])
+                batch['label'].append([item['label']]*path_len + [-1]*(3-path_len))
+                batch['item1'].append(item['item1'])
+                batch['item2'].append(item['item2'])
+                batch['paths'].append(item['paths']+[0]*(3-path_len))
+                batch['edges'].append(item['edges']+[0]*(3-path_len))
+
+            batch['label'] = torch.tensor(batch['label'], dtype=torch.float)
+            batch['item1'] = [item['item1'] for item in data]
+            batch['item2'] = [item['item2'] for item in data]
+            batch['paths'] = torch.tensor(batch['paths'], dtype=torch.long)
+            batch['edges'] = torch.tensor(batch['edges'], dtype=torch.long)
+            return batch
+
+        warmup_train_dataloader = DataLoader(
+            dataset=warmup_train_dataset, 
+            batch_size=config['batch_size'],
+            sampler=RandomSampler(warmup_train_dataset),
+            num_workers=config['num_workers'],
+            collate_fn=collate_fn
+        )
+        warmup_dev_dataloader = DataLoader(
+            dataset=warmup_dev_dataset,
+            batch_size=config['batch_size'],
+            sampler=SequentialSampler(warmup_dev_dataset),
+            num_workers=config['num_workers'],
+            collate_fn=collate_fn
+        )
     else:
         warmup_train_dataloader = None
-        warm_up_test_data = None
+        warmup_dev_dataloader = None
 
     print("fininsh loading data!")
 
-    return warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict
+    return warmup_train_dataloader, warmup_dev_dataloader, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict
 

@@ -3,3 +3,7 @@ venv/
 *.pyc
 data/
 out/
+.vscode/
+nni-experiments/
+try.py
+run.sh

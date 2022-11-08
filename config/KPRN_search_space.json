@@ -1,0 +1,18 @@
+{
+    "batch_size":{
+        "_type": "choice",
+        "_value":[128]
+    },
+    "lr": {
+        "_type": "choice",
+        "_value": [1e-3, 1e-2]
+    },
+    "weight_decay":{
+        "_type": "choice",
+        "_value": [1e-6]
+    },
+    "gamma": {
+        "_type": "choice",
+        "_value": [1.0]
+    }
+}

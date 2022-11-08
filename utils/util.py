@@ -33,6 +33,19 @@ def inf_loop(data_loader):
     for loader in repeat(data_loader):
         yield from loader
 
+def seed_everything(seed=2022):
+    """Set seed for reproducibility.
+
+    Args:
+        seed (int): Seed number.
+    """
+    os.environ["PL_GLOBAL_SEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    
+
 def prepare_device(n_gpu_use):
     """
     setup GPU device if available. get gpu device indices which are used for DataParallel
@@ -160,7 +173,7 @@ def build_train(config):
     item1 = []
     item2 = []
     label = []
-    fp_train = open(config['data']['datapath']+config['data']['train_file'], 'r', encoding='utf-8')
+    fp_train = open(config['datapath']+config['train_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         item1.append(linesplit[1])
@@ -178,7 +191,7 @@ def build_val(config):
     item1 = []
     item2 = []
     label = []
-    fp_train = open(config['data']['datapath']+config['data']['val_file'], 'r', encoding='utf-8')
+    fp_train = open(config['datapath']+config['val_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         item1.append(linesplit[1])
@@ -192,7 +205,7 @@ def build_val(config):
 def build_test(config):#test集里为每个item创建其正例list
     print('constructing test ...')
     test_data = {}
-    fp_train = open(config['data']['datapath']+config['data']['test_file'], 'r', encoding='utf-8')
+    fp_train = open(config['datapath']+config['test_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         if linesplit[0] == "1":
@@ -206,7 +219,7 @@ def build_test(config):#test集里为每个item创建其正例list
 
 def build_doc_feature_embedding(config):
     print('constructing doc feature embedding ...')
-    fp_doc_feature = open(config['data']['datapath']+config['data']['doc_feature_embedding_file'], 'r', encoding='utf-8')
+    fp_doc_feature = open(config['datapath']+config['doc_feature_embedding_file'], 'r', encoding='utf-8')
     doc_embedding_feature_dict = {}
     for line in fp_doc_feature:
         linesplit = line.split('\n')[0].split('\t')
@@ -216,14 +229,14 @@ def build_doc_feature_embedding(config):
 def build_network(config):
     print('constructing adjacency matrix ...')
     entity_id_dict = {}
-    fp_entity2id = open(config['data']['datapath']+config['data']['entity2id_file'], 'r', encoding='utf-8')
+    fp_entity2id = open(config['datapath']+config['entity2id_file'], 'r', encoding='utf-8')
     _ = fp_entity2id.readline()
     for line in fp_entity2id:
         linesplit = line.split('\n')[0].split('\t')
         entity_id_dict[linesplit[0]] = int(linesplit[1])+1# 0 for padding
 
     relation_id_dict = {}
-    fp_relation2id = open(config['data']['datapath']+config['data']['relation2id_file'], 'r', encoding='utf-8')
+    fp_relation2id = open(config['datapath']+config['relation2id_file'], 'r', encoding='utf-8')
     _ = fp_relation2id.readline()
     for line in fp_relation2id:
         linesplit = line.split('\n')[0].split('\t')
@@ -233,7 +246,7 @@ def build_network(config):
     print('constructing kg env ...')
 
     # add news entity to kg
-    fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_entities = open(config['datapath']+config['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         try:
             linesplit = line.strip().split('\t')
@@ -246,7 +259,7 @@ def build_network(config):
         except:
             pass
 
-    adj_file_fp = open(config['data']['datapath']+config['data']['kg_file'], 'r', encoding='utf-8')
+    adj_file_fp = open(config['datapath']+config['kg_file'], 'r', encoding='utf-8')
     adj = {}
     for line in adj_file_fp:
         head, relation, tail = line.split('\n')[0].split('\t')#(head, relation, tail)
@@ -280,10 +293,10 @@ def build_entity_relation_embedding(config, entity_num, relation_num):
     print('constructing embedding ...')
     entity_embedding = np.zeros((entity_num+1, 100))
     relation_embedding = np.zeros((relation_num+1, 100))
-    fp_entity_embedding = open(config['data']['datapath']+config['data']['entity_embedding_file'], 'r', encoding='utf-8')
+    fp_entity_embedding = open(config['datapath']+config['entity_embedding_file'], 'r', encoding='utf-8')
     for i, line in enumerate(fp_entity_embedding):
         entity_embedding[i+1] = np.array(line.strip().split('\t')).astype(np.float)
-    fp_relation_embedding = open(config['data']['datapath']+config['data']['relation_embedding_file'], 'r', encoding='utf-8')
+    fp_relation_embedding = open(config['datapath']+config['relation_embedding_file'], 'r', encoding='utf-8')
     for i, line in enumerate(fp_relation_embedding):
         relation_embedding[i+1] = np.array(line.strip().split('\t')).astype(np.float)
     return torch.FloatTensor(entity_embedding), torch.FloatTensor(relation_embedding)
@@ -291,7 +304,7 @@ def build_entity_relation_embedding(config, entity_num, relation_num):
 def load_news_entity(config, entity_id_dict):
     doc2entities = {}
     entity2doc = {}
-    fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_entities = open(config['datapath']+config['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         linesplit = line.strip().split('\t')
         newsid = linesplit[0]
@@ -306,22 +319,22 @@ def load_news_entity(config, entity_id_dict):
                 if entity_id_dict[entity] not in entity2doc:
                     entity2doc[entity_id_dict[entity]] = []
                 entity2doc[entity_id_dict[entity]].append(newsid)
-        if len(doc2entities[newsid]) > config['model']['news_entity_num']:
-            doc2entities[newsid] = doc2entities[newsid][:config['model']['news_entity_num']]
+        if len(doc2entities[newsid]) > config['news_entity_num']:
+            doc2entities[newsid] = doc2entities[newsid][:config['news_entity_num']]
         else:
-            for i in range(config['model']['news_entity_num']-len(doc2entities[newsid])):#todo
+            for i in range(config['news_entity_num']-len(doc2entities[newsid])):#todo
                 doc2entities[newsid].append(0)
     for item in doc2entities:
         doc2entities[item] = torch.tensor(doc2entities[item], dtype=torch.long)
     # for item in entity2doc:#对doc数目也要限制？
-    #     if len(entity2doc[item])>config['model']['news_entity_num']:
-    #         entity2doc[item] = entity2doc[item][:config['model']['news_entity_num']] #todo load entity in titles
+    #     if len(entity2doc[item])>config['news_entity_num']:
+    #         entity2doc[item] = entity2doc[item][:config['news_entity_num']] #todo load entity in titles
 
     return doc2entities, entity2doc
 
 def load_doc_feature(config):
     doc_embeddings = {}
-    fp_news_feature = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_feature = open(config['datapath']+config['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_feature:
         newsid, news_embedding = line.strip().split('\t')
         news_embedding = news_embedding.split(',')
@@ -334,7 +347,7 @@ def get_anchor_graph_data(config):
     item1 = []
     item2 = []
     label = []
-    fp_news_entities = open(config['data']['datapath']+config['data']['doc_feature_entity_file'], 'r', encoding='utf-8')
+    fp_news_entities = open(config['datapath']+config['doc_feature_entity_file'], 'r', encoding='utf-8')
     for line in fp_news_entities:
         linesplit = line.strip().split('\t')
         newsid = linesplit[0]
@@ -350,7 +363,7 @@ def get_anchor_graph_data(config):
 def build_hit_dict(config):
     print('constructing hit dict ...')
     hit_dict = {}
-    fp_train = open(config['data']['datapath']+config['data']['train_file'], 'r', encoding='utf-8')
+    fp_train = open(config['datapath']+config['train_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
         if linesplit[0] == '1':
@@ -361,25 +374,6 @@ def build_hit_dict(config):
             hit_dict[linesplit[1]].add(linesplit[2])
             hit_dict[linesplit[2]].add(linesplit[1])
     return hit_dict
-
-def load_warm_up(config):
-    print('build warm up data ...')
-    warm_up_data = {}
-    fp_warmup = open(config['data']['datapath']+config['data']['warm_up_train_file'], 'r', encoding='utf-8')
-    item1 = []
-    item2 = []
-    label = []
-    for line in fp_warmup:
-        linesplit = line.strip().split('\t')
-        newsid = linesplit[0]
-        entityid = linesplit[1]
-        item1.append(newsid)
-        item2.append(entityid)
-        label.append(float(linesplit[2]))
-    warm_up_data['item1'] = item1
-    warm_up_data['item2'] = item2
-    warm_up_data['label'] = label
-    return warm_up_data
 
 def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict):#返回的是每个entity连接的doc的embedding的和和doc数目-1， 用于计算coherence reward
     print('build neiborhood embedding ...')
@@ -398,7 +392,7 @@ def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entit
 
 def build_item2item_dataset(config):
     print("constructing item2item dataset ...")
-    fp_train = open(config['data']['train_behavior'], 'r', encoding='utf-8')
+    fp_train = open(config['datapath']+config['train_behavior'], 'r', encoding='utf-8')
     user_history_dict = {}#每个用户历史点击的新闻id，包括history和behavior
     news_click_dict = {}#每个新闻被所有用户点击的总次数
     doc_doc_dict = {}#两个文档对的共同点击用户数,(doc1,doc2)和(doc2,doc1)是一样的
@@ -462,9 +456,9 @@ def build_item2item_dataset(config):
         if news_pair_thred_w_dict[item] > 0.05:
             news_positive_pairs.append(item)
 
-    fp_train_data = open(config['data']['datapath'] + config['data']['train_file'], 'w', encoding='utf-8')
-    fp_valid_data = open(config['data']['datapath'] + config['data']['val_file'], 'w', encoding='utf-8')
-    fp_test_data = open(config['data']['datapath'] + config['data']['test_file'], 'w', encoding='utf-8')
+    fp_train_data = open(config['datapath'] + config['train_file'], 'w', encoding='utf-8')
+    fp_valid_data = open(config['datapath'] + config['val_file'], 'w', encoding='utf-8')
+    fp_test_data = open(config['datapath'] + config['test_file'], 'w', encoding='utf-8')
     for item in news_positive_pairs:#这里有个问题，即负例可能是正例
         random_num = random.random()
         if random_num < 0.8:
@@ -493,12 +487,12 @@ def build_doc_feature(config):#包含每个news的doc embedding，以及其包�
     news_features = {}
 
     news_feature_dict = {}
-    fp_train_news = open(config['data']['train_news'], 'r', encoding='utf-8')
+    fp_train_news = open(config['datapath'] + config['train_news'], 'r', encoding='utf-8')
     for line in fp_train_news:
         newsid, vert, subvert, title, abstract, url, entity_info_title, entity_info_abstract = line.strip().split('\t')
         news_feature_dict[newsid] = (title + " " + abstract, entity_info_title, entity_info_abstract)
     # entityid, entity_freq, entity_position, entity_type
-    fp_dev_news = open(config['data']['valid_news'], 'r', encoding='utf-8')
+    fp_dev_news = open(config['datapath'] + config['valid_news'], 'r', encoding='utf-8')
     for line in fp_dev_news:
         newsid, vert, subvert, title, abstract, url, entity_info_title, entity_info_abstract = line.strip().split('\t')
         news_feature_dict[newsid] = (title + " " + abstract, entity_info_title, entity_info_abstract)
@@ -515,8 +509,8 @@ def build_doc_feature(config):#包含每个news的doc embedding，以及其包�
             news_entity_feature.add(item['WikidataId'])
         news_features[news] = (sentence_embedding, list(news_entity_feature))
 
-    fp_doc_feature_entity = open(config['data']['datapath'] + config['data']['doc_feature_entity_file'], 'w', encoding='utf-8')
-    fp_doc_feature_embedding = open(config['data']['datapath'] + config['data']['doc_feature_embedding_file'], 'w', encoding='utf-8')
+    fp_doc_feature_entity = open(config['datapath'] + config['doc_feature_entity_file'], 'w', encoding='utf-8')
+    fp_doc_feature_embedding = open(config['datapath'] + config['doc_feature_embedding_file'], 'w', encoding='utf-8')
     for news in news_features:
         fp_doc_feature_entity.write(news+'\t')
         fp_doc_feature_entity.write(' '.join(news_features[news][1])+'\n')

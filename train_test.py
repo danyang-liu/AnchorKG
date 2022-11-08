@@ -9,17 +9,17 @@ from trainer.trainer import Trainer
 
 def train(data, config):
 
-    warmup_train_dataloader, warm_up_test_data, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
-    device, deviceids = prepare_device(config['n_gpu'])
+    _, _, _, _, _, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
+    device, _ = prepare_device(config['n_gpu'])
     model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device)
     model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device)
     model_reasoner = Reasoner(config, entity_embedding, relation_embedding, device)
 
 
     criterion = nn.BCEWithLogitsLoss(reduction='none')
-    optimizer_anchor = optim.Adam(model_anchor.parameters(), lr=0.1*config['optimizer']['lr'], weight_decay=config['optimizer']['weight_decay'])
-    optimizer_recommender = optim.Adam(model_recommender.parameters(), lr=config['optimizer']['lr'], weight_decay=config['optimizer']['weight_decay'])
-    optimizer_reasoner = optim.Adam(model_reasoner.parameters(), lr=config['optimizer']['lr'], weight_decay=config['optimizer']['weight_decay'])
+    optimizer_anchor = optim.Adam(model_anchor.parameters(), lr=0.1*config['lr'], weight_decay=config['weight_decay'])
+    optimizer_recommender = optim.Adam(model_recommender.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
+    optimizer_reasoner = optim.Adam(model_reasoner.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
 
     trainer = Trainer(config, model_anchor, model_recommender, model_reasoner, criterion, optimizer_anchor, optimizer_recommender, optimizer_reasoner, device, data)
 
@@ -46,11 +46,11 @@ def test(data, config):
     # get all news embeddings
     doc_list = list(Test_data.keys())
     logger.info('len(doc_list) : {}'.format(len(doc_list)))
-    start_list = list(range(0, len(doc_list), config['data_loader']['batch_size']))
+    start_list = list(range(0, len(doc_list), config['batch_size']))
     doc_embedding = []
     doc_embedding_dict = {}
     for start in start_list:
-        end = start + config['data_loader']['batch_size']
+        end = start + config['batch_size']
         _, _, _, anchor_graph1, _ = model_anchor(doc_list[start:end])
         doc_embedding.extend(model_recommender(doc_list[start:end], doc_list[start:end], anchor_graph1, anchor_graph1)[1].cpu().data.numpy())
         

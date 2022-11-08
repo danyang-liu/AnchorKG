@@ -17,22 +17,22 @@ class Recommender(BaseModel):
         self.elu = nn.ELU(inplace=False)
         self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=-2)
-        self.mlp_layer1 = nn.Linear(self.config['model']['embedding_size']*2, self.config['model']['embedding_size']).to(device)
-        self.mlp_layer2 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
-        self.news_compress1 = nn.Linear(self.config['model']['doc_embedding_size'], self.config['model']['embedding_size']).to(device)
-        self.news_compress2 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
-        self.anchor_embedding_layer = nn.Linear(self.config['model']['embedding_size']*2, self.config['model']['embedding_size']).to(device)
-        self.anchor_weights_layer1 = nn.Linear(self.config['model']['embedding_size'], self.config['model']['embedding_size']).to(device)
-        self.anchor_weights_layer2 = nn.Linear(self.config['model']['embedding_size'],1).to(device)
+        self.mlp_layer1 = nn.Linear(self.config['embedding_size']*2, self.config['embedding_size']).to(device)
+        self.mlp_layer2 = nn.Linear(self.config['embedding_size'], self.config['embedding_size']).to(device)
+        self.news_compress1 = nn.Linear(self.config['doc_embedding_size'], self.config['embedding_size']).to(device)
+        self.news_compress2 = nn.Linear(self.config['embedding_size'], self.config['embedding_size']).to(device)
+        self.anchor_embedding_layer = nn.Linear(self.config['embedding_size']*2, self.config['embedding_size']).to(device)
+        self.anchor_weights_layer1 = nn.Linear(self.config['embedding_size'], self.config['embedding_size']).to(device)
+        self.anchor_weights_layer2 = nn.Linear(self.config['embedding_size'],1).to(device)
 
-        self.entity_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
-        self.relation_compress = nn.Linear(100, self.config['model']['embedding_size']).to(device)
+        self.entity_compress = nn.Linear(100, self.config['embedding_size']).to(device)
+        self.relation_compress = nn.Linear(100, self.config['embedding_size']).to(device)
 
         self.cos = nn.CosineSimilarity(dim=-1)
         self.tanh = nn.Tanh()
 
     def get_news_embedding_batch(self, newsids):
-        news_embeddings = torch.zeros([len(newsids), self.config['model']['doc_embedding_size']])
+        news_embeddings = torch.zeros([len(newsids), self.config['doc_embedding_size']])
         for i, newsid in enumerate(newsids):
             news_embeddings[i] = self.doc_feature_embedding[newsid]
         return news_embeddings.to(self.device)
