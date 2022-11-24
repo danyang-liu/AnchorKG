@@ -1,4 +1,4 @@
-from base.base_model import BaseModel
+from model.base_model import BaseModel
 import torch
 import torch.nn as nn
 import numpy as np
@@ -23,7 +23,7 @@ class Net(BaseModel):
 
         self.elu = torch.nn.ELU(inplace=False)
         self.sigmoid = torch.nn.Sigmoid()
-        #self.softmax = torch.nn.Softmax(dim=0)
+        self.softmax = torch.nn.Softmax(dim=-2)
 
     def get_news_embedding_batch(self, newsids):
         news_embeddings = []
@@ -44,12 +44,12 @@ class Net(BaseModel):
         # Actor
         actor_x = self.elu(self.actor_l1(torch.cat([state_input, action_input], dim=-1)))
         actor_out = self.elu(self.actor_l2(actor_x))
-        act_probs = self.sigmoid(self.actor_l3(actor_out))
+        act_probs = self.softmax(self.actor_l3(actor_out))
 
         # Critic
         critic_x = self.elu(self.actor_l1(torch.cat([state_input, action_input], dim=-1)))
         critic_out = self.elu(self.critic_l2(critic_x))
-        q_actions = self.sigmoid(self.critic_l3(critic_out))
+        q_actions = self.critic_l3(critic_out)
 
         return act_probs, q_actions
 
@@ -84,11 +84,11 @@ class AnchorKG(BaseModel):
                                 nn.Tanh()
                             ).to(device)
         self.entity_compress =  nn.Sequential(
-                                    nn.Linear(100, self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
                                     nn.Tanh(),
                                 ).to(device)
         self.relation_compress = nn.Sequential(
-                                    nn.Linear(100, self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
                                     nn.Tanh(),
                                 ).to(device)
         #self.innews_relation = nn.Embedding(1,self.config['embedding_size']).to(device)
@@ -100,7 +100,7 @@ class AnchorKG(BaseModel):
         self.policy_net = Net(self.config, self.entity_id_dict, self.doc_feature_embedding, device).to(device)
         #self.target_net = Net(self.config, self.entity_id_dict, self.doc_feature_embedding, device).to(device)
 
-    def get_neiborhood_news_embedding_batch(self, news_embedding, entityids):#(batch,5,768),即每个entity的doc neiborhood embedding的均值
+    def get_neiborhood_news_embedding_batch(self, news_embedding, entityids):#(batch,5,768), doc neiborhood embedding avg for each entity
         neibor_news_embedding_avg = self.neibor_embedding(entityids.to('cpu')).to(self.device)
         neibor_num = []
         for i in range(len(entityids)):
@@ -136,8 +136,8 @@ class AnchorKG(BaseModel):
             for j in range(len(state_id_input_batch[i])):
                 idx = state_id_input_batch[i][j].item()
                 if idx in self.entity_doc_dict and newsid_batch[i] in self.hit_dict:
-                    entity_neibor = set(self.entity_doc_dict[idx]).discard(newsid_batch[i])#当前entity出现过的doc
-                    news_hit_neibor = self.hit_dict[newsid_batch[i]]#与当前doc相似的doc
+                    entity_neibor = set(self.entity_doc_dict[idx]).discard(newsid_batch[i])#entity neiborhood news
+                    news_hit_neibor = self.hit_dict[newsid_batch[i]]#similarity doc
                     if entity_neibor != None and len(entity_neibor & news_hit_neibor)>0:
                         hit_rewards[i][j] = 1.0
 
@@ -155,7 +155,7 @@ class AnchorKG(BaseModel):
         reward = self.get_batch_rewards_step(hit_reward, sim_reward)
         return reward
 
-    def get_news_entities_batch(self, newsids):#当前news里包含的entity
+    def get_news_entities_batch(self, newsids):#entity contained in current news
         news_entities = torch.zeros(len(newsids), self.config['news_entity_num'], dtype=torch.long)
         news_relations = torch.zeros(len(newsids), self.config['news_entity_num'], dtype=torch.long)#专门用一个innews_relation去学未必效果好
         for i in range(len(newsids)):
@@ -200,8 +200,8 @@ class AnchorKG(BaseModel):
         reasoning_reward = torch.unsqueeze(reasoning_reward, dim=1)
         embeddding_reward = embeddding_reward.expand(step_reward.shape[0], step_reward.shape[1])
         reasoning_reward = reasoning_reward.expand(step_reward.shape[0], step_reward.shape[1])
-        curr_reward = alpha2 * step_reward + (1-alpha2)*(alpha1*embeddding_reward + (1-alpha1)*reasoning_reward)#本轮的total reward
-        advantage = self.get_advantage(curr_reward, q_values_step) #curr_reward - q_values_step
+        curr_reward = alpha2 * step_reward + (1-alpha2) * (alpha1*embeddding_reward + (1-alpha1)*reasoning_reward)#本轮的total reward
+        advantage = self.get_advantage(curr_reward.detach(), q_values_step) #curr_reward - q_values_step
         actor_loss = self.get_actor_loss(torch.log(act_probs_step), advantage)#self.get_actor_loss(act_probs_step, q_values_step)#self.get_actor_loss(torch.log(act_probs_step), advantage) # -act_probs_step * advantage #problem2
         critic_loss = advantage.pow(2)#self.get_critic_loss(advantage) #advantage.pow(2)
 
@@ -227,12 +227,12 @@ class AnchorKG(BaseModel):
         q_values = q_values.reshape(q_values.shape[0] * q_values.shape[1], q_values.shape[2])
         action_id_input = action_id_input.reshape(action_id_input.shape[0] * action_id_input.shape[1], action_id_input.shape[2])
         relation_id_input = relation_id_input.reshape(relation_id_input.shape[0] * relation_id_input.shape[1], relation_id_input.shape[2])
-        state_id_input_value = action_id_input.gather(1, acts_idx)#被选中的entity的id,(batch,topk)
-        relation_id_selected = relation_id_input.gather(1, acts_idx)#被选中的relation的id,(batch,topk)
+        state_id_input_value = action_id_input.gather(1, acts_idx)#selected entity id,(batch,topk)
+        relation_id_selected = relation_id_input.gather(1, acts_idx)#selected relation id,(batch,topk)
         weights = weights.gather(1, acts_idx)
         q_values = q_values.gather(1, acts_idx)
-        weights = weights.reshape(shape0, shape1 *  weights.shape[1])#被选中的(r,e)对应的概率值，(batch,topk)
-        q_values = q_values.reshape(shape0, shape1 * q_values.shape[1])#被选中的(r,e)动作对应的价值函数估计(batch,topk)
+        weights = weights.reshape(shape0, shape1 *  weights.shape[1])#probility for selected (r,e) ,(batch,topk)
+        q_values = q_values.reshape(shape0, shape1 * q_values.shape[1])#q_value for selected (r,e) , (batch,topk)
         state_id_input_value = state_id_input_value.reshape(shape0, shape1 *  state_id_input_value.shape[1])
         relation_id_selected = relation_id_selected.reshape(shape0, shape1 *  relation_id_selected.shape[1])
         return weights, q_values, state_id_input_value, relation_id_selected
@@ -304,17 +304,17 @@ class AnchorKG(BaseModel):
 
         anchor_graph1 = []
         anchor_relation1 = []
-        act_probs_steps1 = []#策略网络确定的动作概率
-        step_rewards1 = []#每一步的即时reward
-        q_values_steps1 = []#价值网络确定的动作价值
+        act_probs_steps1 = []#action probility of policy net 
+        step_rewards1 = []#immediate reward
+        q_values_steps1 = []#q_value of target net
 
         news_embedding_origin = self.get_news_embedding_batch(news1)#(batch, 768)
         news_embedding = self.news_compress(news_embedding_origin)#(batch, 128)
         
-        action_id, relation_id = self.get_news_entities_batch(news1)#当前news里包含的实体和关系,这里关系恒取id=0, cpu
+        action_id, relation_id = self.get_news_entities_batch(news1)#entities and relations in current news, relation id==0, cpu
         action_embedding = self.entity_compress(self.entity_embedding(action_id).to(self.device))#(batch, 20, 128)
         relation_embedding = self.relation_compress(self.relation_embedding(relation_id).to(self.device))
-        action_embedding = action_embedding + relation_embedding#动作集合的表征,(batch, 20, 128)
+        action_embedding = action_embedding + relation_embedding#(batch, 20, 128)
         
         state_input = self.get_state_input(news_embedding, depth, anchor_graph1, history_entity_1, history_relation_1)#(batch,256)
 
@@ -322,14 +322,14 @@ class AnchorKG(BaseModel):
             act_probs, q_values = self.policy_net(state_input, action_embedding)#output: (batch, 20, 1), (batch, 20, 1)
             topk = self.config['topk'][depth]
             anchor_act_probs, anchor_q_values, anchor_nodes, anchor_relations = self.get_anchor_nodes(act_probs, q_values, action_id.to(self.device), relation_id.to(self.device), topk)#做动作
-            history_entity_1 = anchor_nodes#anchor_nodes即最新加入的实体
+            history_entity_1 = anchor_nodes#newly adds entities
             history_relation_1 = anchor_relations
             depth = depth + 1
-            state_input = self.get_state_input(news_embedding, depth, anchor_graph1, history_entity_1, history_relation_1)#下一个状态
+            state_input = self.get_state_input(news_embedding, depth, anchor_graph1, history_entity_1, history_relation_1)#next state
 
             act_probs_steps1.append(anchor_act_probs)
             q_values_steps1.append(anchor_q_values)
-            actionid_lookup, action_rid_lookup = self.get_next_action(anchor_nodes)#下一步可以扩展的(r,e)集合, (batch, 5, 20) / (batch, 5*3, 20)
+            actionid_lookup, action_rid_lookup = self.get_next_action(anchor_nodes)#(r,e) space for next action, (batch, 5, 20) / (batch, 5*3, 20)
             action_id = actionid_lookup
             relation_id = action_rid_lookup
             action_embedding = self.entity_compress(self.entity_embedding(action_id).to(self.device)) + self.relation_compress(self.relation_embedding(relation_id).to(self.device))
@@ -339,7 +339,7 @@ class AnchorKG(BaseModel):
             step_reward = self.get_reward(news1, news_embedding_origin, anchor_nodes)
             step_rewards1.append(step_reward)
 
-        return act_probs_steps1, q_values_steps1, step_rewards1, anchor_graph1, anchor_relation1 #仅act_probs_steps1, q_values_steps1有有效梯度
+        return act_probs_steps1, q_values_steps1, step_rewards1, anchor_graph1, anchor_relation1 #only act_probs_steps1, q_values_steps1 have gradients
 
     def warm_train(self, batch):
         loss_fn = nn.BCELoss()
@@ -356,7 +356,7 @@ class AnchorKG(BaseModel):
             state_input = self.get_state_input(news_embedding, i, [], history_entity, history_relation)#(batch,256)
             act_probs, _ = self.policy_net(state_input, path_embeddings[:,i,:])#(batch, 1)
             batch_act_probs.append(act_probs)
-            history_entity = batch['paths'][:, i:i+1]#此处遵从forward里的实现，即只用最新加入的节点来进行下一个state_input的计算
+            history_entity = batch['paths'][:, i:i+1]#same as forward func，state_input only depends on newly added nodes
             history_relation = batch['edges'][:, i:i+1]
         
         batch_act_probs = torch.cat(batch_act_probs, dim=1)#(batch, depth)

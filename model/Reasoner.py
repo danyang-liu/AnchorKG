@@ -3,7 +3,7 @@ import torch.nn as nn
 from utils import *
 import numpy as np
 import networkx as nx
-from base.base_model import BaseModel
+from model.base_model import BaseModel
 
 class Reasoner(BaseModel):
 
@@ -15,12 +15,21 @@ class Reasoner(BaseModel):
         self.gru = torch.nn.GRU(self.config['embedding_size'], self.config['embedding_size']).to(device)
         self.sigmoid = nn.Sigmoid()
         self.elu = nn.ELU()
-        self.gru_output_layer1 = nn.Linear(self.config['embedding_size'],self.config['embedding_size']).to(device)
-        self.gru_output_layer2 = nn.Linear(self.config['embedding_size'],1).to(device)
+        self.gru_layer = nn.Sequential(
+            nn.Linear(self.config['embedding_size'], self.config['embedding_size']),
+            nn.ELU(),
+            nn.Linear(self.config['embedding_size'],1),
+        ).to(device)
         self.entity_embedding = nn.Embedding.from_pretrained(entity_embedding)
         self.relation_embedding = nn.Embedding.from_pretrained(relation_embedding)
-        self.entity_compress = nn.Linear(100, self.config['embedding_size']).to(device)
-        self.relation_compress = nn.Linear(100, self.config['embedding_size']).to(device)
+        self.entity_compress =  nn.Sequential(
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
+                                    nn.Tanh(),
+                                ).to(device)
+        self.relation_compress = nn.Sequential(
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
+                                    nn.Tanh(),
+                                ).to(device)
 
     def get_overlap_entities(self, anchor_graph1, anchor_graph2):
         overlap_entity_num = []
@@ -42,8 +51,8 @@ class Reasoner(BaseModel):
         return torch.tensor(overlap_entity_num).to(self.device), torch.tensor(anchor_graph1_num).to(self.device), torch.tensor(anchor_graph2_num).to(self.device), overlap_entity_num_cpu
 
     def get_anchor_graph_list(self, anchor_graph_layers, batch_size):
-        anchor_graph_list_flat = []#展平的，(batch,50)
-        anchor_graph_list = []#有层级结构，(batch,[5,15,30])
+        anchor_graph_list_flat = []#flattened，(batch,50)
+        anchor_graph_list = []#hierarchical，(batch,[5,15,30])
         for i in range(batch_size):
             anchor_graph_list_flat.append([])
             anchor_graph_list.append([[],[],[]])
@@ -59,12 +68,12 @@ class Reasoner(BaseModel):
         for paths in reasoning_paths:
             predict_scores.append([0])
             for path in paths:
-                path_node_embeddings = self.tanh(self.entity_compress(self.entity_embedding(torch.tensor(path)).to(self.device)))
+                path_node_embeddings = self.entity_compress(self.entity_embedding(torch.tensor(path)).to(self.device))
                 if len(path_node_embeddings.shape) == 1:
                     path_node_embeddings = torch.unsqueeze(path_node_embeddings, 0)
                 path_node_embeddings = torch.unsqueeze(path_node_embeddings, 1)
                 output, h_n = self.gru(path_node_embeddings)
-                path_score = (self.gru_output_layer2(self.elu(self.gru_output_layer1(torch.squeeze(output[-1])))))
+                path_score = (self.gru_layer(torch.squeeze(output[-1])))
                 predict_scores[-1].append(path_score)
             predict_scores[-1] = torch.sum(predict_scores[-1]).float()
         return torch.stack(predict_scores).to(self.device)
@@ -116,15 +125,15 @@ class Reasoner(BaseModel):
             predict_scores.append(torch.zeros([1]).to(self.device))
             paths_scores.append([])
             for j in range(len(paths)):
-                path_node_embeddings = self.tanh(self.entity_compress(self.entity_embedding(torch.tensor(paths[j])).to(self.device)))
-                path_edge_embeddings = self.tanh(self.relation_compress(self.relation_embedding(torch.tensor(edges[j])).to(self.device)))
+                path_node_embeddings = self.entity_compress(self.entity_embedding(torch.tensor(paths[j])).to(self.device))
+                path_edge_embeddings = self.relation_compress(self.relation_embedding(torch.tensor(edges[j])).to(self.device))
                 if len(path_node_embeddings.shape) == 1:
                     path_node_embeddings = torch.unsqueeze(path_node_embeddings, 0)
                     path_edge_embeddings = torch.unsqueeze(path_edge_embeddings, 0)
                 path_node_embeddings = torch.unsqueeze(path_node_embeddings, 1)
                 path_edge_embeddings = torch.unsqueeze(path_edge_embeddings, 1)
                 output, h_n = self.gru(path_node_embeddings+path_edge_embeddings)
-                path_score = self.sigmoid(self.gru_output_layer2(self.elu(self.gru_output_layer1(torch.squeeze(output[-1])))))
+                path_score = self.sigmoid(self.gru_layer(torch.squeeze(output[-1])))
                 predict_scores[-1] = predict_scores[-1] + path_score
                 paths_scores[-1].append(path_score)
         paths_predict_score = torch.cat(predict_scores, dim=0)

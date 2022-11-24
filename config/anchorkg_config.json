@@ -2,7 +2,7 @@
     "name": "AnchorKG",
     "n_gpu": 1,
 
-    "batch_size": 128,
+    "batch_size": 64,
     "shuffle": true,
     "num_workers": 0,
 
@@ -26,29 +26,35 @@
     "relation2id_file": "/kg/wikidata-graph/relation2id.txt",
     
     "doc_embedding_size": 768,
+    "entity_embedding_size": 100,
     "embedding_size": 128,
     "news_entity_num": 20,
     "alpha1": 0.9,
-    "alpha2": 0.9,
+    "alpha2": 0.1,
     "beta": 0.2,
     "topk": [
         5,
         3,
         2
     ],
-    "gamma": 0.9,
+    "gamma": 1.0,
 
-    "epochs": 20,
-    "warm_up": true,
+    "epochs": 100,
     "train_neg_num": 4,
-    "save_period": 1,
     "early_stop": 5,
     "monitor": "val_auc",
     "verbosity": 2,
     "seed": 2022,
 
     "type": "Adam",
-    "lr": 2e-05,
-    "weight_decay": 1e-06,
-    "amsgrad": true
+    "lr": 2e-5,
+    "weight_decay": 1e-6,
+    "amsgrad": true,
+
+    "warm_up": true,
+    "warmup_epochs": 20,
+    "warmup_lr": 3e-3,
+    "warmup_weight_decay": 1e-6,
+    "warmup_batch_size": 256,
+    "warmup_num_workers": 0
 }

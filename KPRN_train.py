@@ -28,11 +28,11 @@ class KPRN(nn.Module):
                                 nn.Tanh()
                             ).to(device)
         self.entity_compress =  nn.Sequential(
-                                    nn.Linear(100, self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
                                     nn.Tanh(),
                                 ).to(device)
         self.relation_compress = nn.Sequential(
-                                    nn.Linear(100, self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
                                     nn.Tanh(),
                                 ).to(device)
         
@@ -95,13 +95,14 @@ class KPRN_Trainer():
         self.epochs = config['epochs']
         self.num_train_steps = int(len(train_dataloader) * self.epochs)
 
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
+        self.optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
         
-        self.scheduler = ExponentialLR(self.optimizer, gamma=0.98)
+        #self.scheduler = ExponentialLR(self.optimizer, gamma=0.98)
         self.early_stopping = EarlyStopping(patience=config['early_stop'], greater=True)
         self.ckpt_dir = config.save_dir
     
     def train(self):
+        result = self._valid_epoch(-1)
         for epoch in range(1, self.epochs+1):
             self.logger.info("Epoch {}/{}".format(epoch, self.epochs))
             self.logger.info("Training")
@@ -116,11 +117,11 @@ class KPRN_Trainer():
             self.early_stopping(auc_score)
             if self.early_stopping.early_stop:
                 self.logger.info("Early stop at epoch {}, best auc score: {:.5f}".format(epoch, self.early_stopping.best_score))
-                if self.config['use_nni']:
-                    nni.report_final_result({"default":self.early_stopping.best_score})
                 break
             elif self.early_stopping.counter == 0:
                 self._save_checkpoint(epoch)
+        if self.config['use_nni']:
+            nni.report_final_result({"default":self.early_stopping.best_score})
                     
             
     def _train_epoch(self, epoch):
@@ -132,7 +133,7 @@ class KPRN_Trainer():
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            self.scheduler.step()
+            #self.scheduler.step()
             epoch_loss += loss.item()
         t2 = time.time()
         self.logger.info("epoch {}, train Loss {:.5f}, time {:.5f}".format(epoch, epoch_loss/len(self.train_dataloader), t2-t1))
@@ -156,8 +157,8 @@ class KPRN_Trainer():
 
 
     def predict(self):
-        #ckpt_path = os.path.join(self.ckpt_dir, 'KPRN_model.ckpt')
-        ckpt_path = "./out/saved/models/KPRN/cga3pon9/GLzyC-1108_114826/KPRN_model.ckpt"
+        ckpt_path = os.path.join(self.ckpt_dir, 'KPRN_model.ckpt')
+        #ckpt_path = "./out/saved/models/KPRN/fy6ad2rp/NhjQB-1109_211741/KPRN_model.ckpt"
         self.model.load_state_dict(torch.load(ckpt_path))
         self.model.eval()
         with torch.no_grad():
@@ -246,16 +247,21 @@ if __name__ == '__main__':
     config = ConfigParser.from_args(parser)
     if config['use_nni']:
         import nni
-    device, deviceids = prepare_device(config['n_gpu'])
     seed_everything(config['seed'])
+    device, deviceids = prepare_device(config['n_gpu'])
 
     #dataset
     train_dataloader, dev_dataloader, test_dataloader = create_dataloaders(config)
 
     #model
-    entity_embedding = torch.load(config['datapath']+"/cache/entity_embedding.pt")
-    relation_embedding = torch.load(config['datapath']+"/cache/relation_embedding.pt")
+    if os.path.exists(config['datapath']+"/cache/entity_embedding.pt"):
+        entity_embedding = torch.load(config['datapath']+"/cache/entity_embedding.pt")
+        relation_embedding = torch.load(config['datapath']+"/cache/relation_embedding.pt")
+    else:
+        entity_adj, relation_adj, entity_id_dict, relation_id_dict, kg_env = build_network(config)
+        entity_embedding, relation_embedding = build_entity_relation_embedding(config, len(entity_id_dict), len(relation_id_dict))
     doc_feature_embedding = build_doc_feature_embedding(config)
+
     model = KPRN(config, doc_feature_embedding, entity_embedding, relation_embedding, device=device)
 
     trainer = KPRN_Trainer(config, model, train_dataloader, dev_dataloader, test_dataloader, device=device)
@@ -265,6 +271,6 @@ if __name__ == '__main__':
     trainer.logger.info("log dir {}".format(config.log_dir))
     trainer.logger.info("model {}".format(model))
 
-    #trainer.train()
+    trainer.train()
     trainer.predict()
 

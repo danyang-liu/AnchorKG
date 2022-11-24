@@ -202,7 +202,7 @@ def build_val(config):
     test_data['label'] = label
     return test_data
 
-def build_test(config):#test集里为每个item创建其正例list
+def build_test(config):#create all positive item list for every item
     print('constructing test ...')
     test_data = {}
     fp_train = open(config['datapath']+config['test_file'], 'r', encoding='utf-8')
@@ -326,7 +326,7 @@ def load_news_entity(config, entity_id_dict):
                 doc2entities[newsid].append(0)
     for item in doc2entities:
         doc2entities[item] = torch.tensor(doc2entities[item], dtype=torch.long)
-    # for item in entity2doc:#对doc数目也要限制？
+    # for item in entity2doc:
     #     if len(entity2doc[item])>config['news_entity_num']:
     #         entity2doc[item] = entity2doc[item][:config['news_entity_num']] #todo load entity in titles
 
@@ -375,10 +375,10 @@ def build_hit_dict(config):
             hit_dict[linesplit[2]].add(linesplit[1])
     return hit_dict
 
-def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict):#返回的是每个entity连接的doc的embedding的和和doc数目-1， 用于计算coherence reward
+def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict):#return doc embedding sum and num-1 for each entity, for calculating coherence reward
     print('build neiborhood embedding ...')
     entity_num = len(entity_id_dict)
-    #每个entity（包括0）的邻居embedding及邻居个数
+    #neibor_embedding and neibor_num for each entity(inlcuding id=0)
     entity_neibor_embedding_list = torch.zeros([entity_num+1, 768],dtype=torch.float32)
     entity_neibor_num_list = torch.ones(entity_num+1, dtype=torch.long)
     for entity in entity_doc_dict:
@@ -387,16 +387,16 @@ def build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entit
             entity_news_embedding_list[i] = doc_feature_embedding[news]
         entity_neibor_embedding_list[entity] = torch.sum(entity_news_embedding_list, dim=0)
         if len(entity_doc_dict[entity])>=2:
-            entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1#为何要-1,排除掉forward里的news本身
+            entity_neibor_num_list[entity] = len(entity_doc_dict[entity])-1#-1 for news ifself in forward function
     return entity_neibor_embedding_list, entity_neibor_num_list#todo torch.tensor(entity_neibor_embedding_list).cuda(), torch.tensor(entity_neibor_num_list).cuda()
 
 def build_item2item_dataset(config):
     print("constructing item2item dataset ...")
     fp_train = open(config['datapath']+config['train_behavior'], 'r', encoding='utf-8')
-    user_history_dict = {}#每个用户历史点击的新闻id，包括history和behavior
-    news_click_dict = {}#每个新闻被所有用户点击的总次数
-    doc_doc_dict = {}#两个文档对的共同点击用户数,(doc1,doc2)和(doc2,doc1)是一样的
-    all_news_set = set()#behavior里所有新闻id
+    user_history_dict = {}#history clicked news id for each user, including history and behavior
+    news_click_dict = {}#The total number of clicks each news was clicked by all users
+    doc_doc_dict = {}#The number of co-clicks for a pair of documents, (doc1,doc2)和(doc2,doc1) are the same
+    all_news_set = set()#all news id in behaviors
     for line in fp_train:
         index, userid, imp_time, history, behavior = line.strip().split('\t')
         behavior = behavior.split(' ')
@@ -413,7 +413,7 @@ def build_item2item_dataset(config):
                     news_click_dict[newsid] = 1
                 else:
                     news_click_dict[newsid] = news_click_dict[newsid] + 1
-        news = history.split(' ')#history可能缺失
+        news = history.split(' ')#history may be empty
         for newsid in news:
             if newsid=='':
                 continue
@@ -435,7 +435,7 @@ def build_item2item_dataset(config):
                         doc_doc_dict[(doc1, doc2)] = doc_doc_dict[(doc1, doc2)] + 1
                     elif (doc2, doc1) in doc_doc_dict and (doc1, doc2) not in doc_doc_dict:
                         doc_doc_dict[(doc2, doc1)] = doc_doc_dict[(doc2, doc1)] + 1
-    weight_doc_doc_dict = {}#保留为postive instance的条件
+    weight_doc_doc_dict = {}#postive instance principle
     for item in doc_doc_dict:
         if item[0] in news_click_dict and item[1] in news_click_dict:
             weight_doc_doc_dict[item] = doc_doc_dict[item] / math.sqrt(
@@ -456,10 +456,11 @@ def build_item2item_dataset(config):
         if news_pair_thred_w_dict[item] > 0.05:
             news_positive_pairs.append(item)
 
+    os.makedirs(config['datapath'] + config['train_file'].rsplit("/", 1)[0], exist_ok=True)
     fp_train_data = open(config['datapath'] + config['train_file'], 'w', encoding='utf-8')
     fp_valid_data = open(config['datapath'] + config['val_file'], 'w', encoding='utf-8')
     fp_test_data = open(config['datapath'] + config['test_file'], 'w', encoding='utf-8')
-    for item in news_positive_pairs:#这里有个问题，即负例可能是正例
+    for item in news_positive_pairs:#negative instance may be selected as positive instance
         random_num = random.random()
         if random_num < 0.8:
             fp_train_data.write("1" + '\t' + item[0] + '\t' + item[1] + '\n')
@@ -481,7 +482,7 @@ def build_item2item_dataset(config):
     fp_test_data.close()
 
 
-def build_doc_feature(config):#包含每个news的doc embedding，以及其包含的entity id
+def build_doc_feature(config):#doc embedding for each news, and entity ids for each news
     print("constructing news features ... ")
 
     news_features = {}
@@ -523,3 +524,93 @@ def build_doc_feature(config):#包含每个news的doc embedding，以及其包�
 def process_mind_data(config):
     build_item2item_dataset(config)
     build_doc_feature(config)
+
+def process_KPRN_data(config):
+    Train_data = build_train(config)
+    if os.path.exists(config['datapath']+"/cache/entity_adj.pt"):
+        entity_adj = torch.load(config['datapath']+"/cache/entity_adj.pt")
+        relation_adj = torch.load(config['datapath']+"/cache/relation_adj.pt")
+        entity_id_dict = np.load(config['datapath']+"/cache/entity_id_dict.npy", allow_pickle=True).item()
+    else:
+        entity_adj, relation_adj, entity_id_dict, relation_id_dict, kg_env = build_network(config)
+    doc_entity_dict, entity_doc_dict = load_news_entity(config, entity_id_dict)
+    hit_dict = build_hit_dict(config)
+    
+    news_set=set()
+    for item1, item2, label in zip(Train_data['item1'], Train_data['item2'], Train_data['label']):
+        news_set.add(item1)
+
+    def find_path(data, news, entities, relations, pre_ents, pre_edges):
+        for ent, rel in zip(entities, relations):
+            if ent==0:
+                break
+            other_news = set(entity_doc_dict[ent]) - set([news]) if ent in entity_doc_dict else set()
+            for other in other_news:
+                if (news, other) in data:
+                    data[(news, other)]["paths"].append(pre_ents+[ent])
+                    data[(news, other)]["edges"].append(pre_edges+[rel])
+                elif other in hit_dict[news]:
+                    data[(news, other)] = { "label": 1, "item1": news, "item2": other, "paths": [pre_ents+[ent]], "edges": [pre_edges+[rel]]}
+                else:
+                    data[(news, other)] = { "label": 0, "item1": news, "item2": other, "paths": [pre_ents+[ent]], "edges": [pre_edges+[rel]]}
+    
+    count_1=0
+    count_0=0
+    os.makedirs(config['datapath'] + config['KPRN_train_file'].rsplit("/", 1)[0], exist_ok=True)
+    with open(config['datapath']+config['KPRN_train_file'], "w") as f_train:
+        with open(config['datapath']+config['KPRN_val_file'], "w") as f_dev:
+            for item1 in tqdm(news_set, total=len(news_set)):
+                data = {}
+                news_entity = doc_entity_dict[item1].tolist()
+                find_path(data, item1, news_entity, [0]*20, [], [])
+                for ent in news_entity:
+                    hop1_entity = entity_adj[ent].tolist()
+                    hop1_relation = relation_adj[ent].tolist()
+                    find_path(data, item1, hop1_entity, hop1_relation, [ent], [0])
+                    for ent_hop1, rel_hop1 in zip(hop1_entity, hop1_relation):
+                        hop2_entity = entity_adj[ent_hop1].tolist()
+                        hop2_relation = relation_adj[ent_hop1].tolist()
+                        find_path(data, item1, hop2_entity, hop2_relation, [ent, ent_hop1], [0, rel_hop1])
+
+                for item in data:
+                    if data[item]["label"]!=1 and random.random()>=0.001:#filter negative samples
+                        continue
+                    if len(data[item]['paths']) > 20:#(news1, news2) pair can not have more than 20 paths
+                        indices = random.sample(range(len(data[item]['paths'])), 20)
+                        data[item]['paths'] = [data[item]['paths'][idx] for idx in indices]
+                        data[item]['edges'] = [data[item]['edges'][idx] for idx in indices]
+                    line = json.dumps(data[item])+"\n"
+                    if data[item]["label"]==1:
+                        count_1+=1
+                    else:
+                        count_0+=1
+                    if random.random()<0.2:
+                        f_dev.write(line)
+                    else:
+                        f_train.write(line)
+    print(count_1, count_0)
+
+    #15619 29992338
+    #15629 30123
+
+def cache_data(config):
+    os.makedirs(config['datapath']+"/cache", exist_ok=True)
+    if os.path.exists(config['datapath']+"/cache/entity_adj.pt"):
+        entity_adj = torch.load(config['datapath']+"/cache/entity_adj.pt")
+        relation_adj = torch.load(config['datapath']+"/cache/relation_adj.pt")
+        entity_id_dict = np.load(config['datapath']+"/cache/entity_id_dict.npy", allow_pickle=True).item()
+        relation_id_dict = np.load(config['datapath']+"/cache/relation_id_dict.npy", allow_pickle=True).item()
+        kg_env = None #nx.read_gpickle(config['datapath']+"/cache/kg_env.gpickle")
+        entity_embedding = torch.load(config['datapath']+"/cache/entity_embedding.pt")
+        relation_embedding = torch.load(config['datapath']+"/cache/relation_embedding.pt")
+    else:
+        entity_adj, relation_adj, entity_id_dict, relation_id_dict, kg_env = build_network(config)
+        entity_embedding, relation_embedding = build_entity_relation_embedding(config, len(entity_id_dict), len(relation_id_dict))
+        os.makedirs(config['datapath']+"/cache", exist_ok=True)
+        torch.save(entity_adj, config['datapath']+"/cache/entity_adj.pt")
+        torch.save(relation_adj, config['datapath']+"/cache/relation_adj.pt")
+        np.save(config['datapath']+"/cache/entity_id_dict.npy", entity_id_dict)
+        np.save(config['datapath']+"/cache/relation_id_dict.npy", relation_id_dict)
+        nx.write_gpickle(kg_env, config['datapath']+"/cache/kg_env.gpickle")
+        torch.save(entity_embedding, config['datapath']+"/cache/entity_embedding.pt")
+        torch.save(relation_embedding, config['datapath']+"/cache/relation_embedding.pt")

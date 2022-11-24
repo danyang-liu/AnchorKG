@@ -82,16 +82,16 @@ def load_data(config):
 
         warmup_train_dataloader = DataLoader(
             dataset=warmup_train_dataset, 
-            batch_size=config['batch_size'],
+            batch_size=config['warmup_batch_size'],
             sampler=RandomSampler(warmup_train_dataset),
-            num_workers=config['num_workers'],
+            num_workers=config['warmup_num_workers'],
             collate_fn=collate_fn
         )
         warmup_dev_dataloader = DataLoader(
             dataset=warmup_dev_dataset,
-            batch_size=config['batch_size'],
+            batch_size=config['warmup_batch_size'],
             sampler=SequentialSampler(warmup_dev_dataset),
-            num_workers=config['num_workers'],
+            num_workers=config['warmup_num_workers'],
             collate_fn=collate_fn
         )
     else:

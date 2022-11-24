@@ -8,20 +8,27 @@
     "KPRN_predict_train_file": "/KPRN/predict_train.json",
     "KPRN_predict_dev_file": "/KPRN/predict_dev.json",
     "doc_feature_embedding_file": "/doc_feature_embedding.tsv",
+    "entity_embedding_file": "/kg/wikidata-graph/entity2vecd100.vec",
+    "relation_embedding_file": "/kg/wikidata-graph/relation2vecd100.vec",
+    "entity2id_file": "/kg/wikidata-graph/entity2id.txt",
+    "relation2id_file": "/kg/wikidata-graph/relation2id.txt",
+    "doc_feature_entity_file": "/doc_feature_entity.tsv",
+    "kg_file": "/kg/wikidata-graph/wikidata-graph.tsv",
 
     "doc_embedding_size": 768,
+    "entity_embedding_size": 100,
     "embedding_size": 128,
     "news_entity_num": 20,
     "gamma": 1.0,
     
     "batch_size": 128,   
-    "epochs": 10,
+    "epochs": 20,
     "train_neg_num": 4,
-    "early_stop": 3,
+    "early_stop": 5,
     "verbosity": 2,
     "seed": 2022,
     
-    "lr": 2e-03,
-    "weight_decay": 1e-06,
+    "lr": 1e-2,
+    "weight_decay": 1e-04,
     "warmup_ratio": 0.1
 }

@@ -6,6 +6,8 @@ from utils.pytorchtools import *
 from utils.logger import *
 from model.AnchorKG import *
 from tqdm import tqdm
+import nni
+import hnswlib
 
 def get_anchor_graph_data(doc_feature_file):
     print('constructing anchor doc ...')
@@ -30,8 +32,7 @@ class Trainer():
     """
     Trainer class
     """
-    def __init__(self, config, model_anchor, model_recommender, model_reasoner, criterion, optimizer_anchor, optimizer_recommender, optimizer_reasoner, device,
-                 data):
+    def __init__(self, config, model_anchor, model_recommender, model_reasoner, device, data):
         super().__init__()
 
         self.config = config
@@ -40,13 +41,13 @@ class Trainer():
         self.model_anchor = model_anchor
         self.model_recommender = model_recommender
         self.model_reasoner = model_reasoner
-        self.criterion = criterion
-        self.optimizer_anchor = optimizer_anchor
-        self.optimizer_recommender = optimizer_recommender
-        self.optimizer_reasoner = optimizer_reasoner
+
+        self.criterion = nn.BCEWithLogitsLoss(reduction='none')
+        self.optimizer_anchor = torch.optim.Adam(self.model_anchor.parameters(), lr=0.1*config['lr'], weight_decay=config['weight_decay'])
+        self.optimizer_recommender = torch.optim.Adam(self.model_recommender.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
+        self.optimizer_reasoner = torch.optim.Adam(self.model_reasoner.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
 
         self.epochs = config['epochs']
-        self.save_period = config['save_period']
 
         self.start_epoch = 1
 
@@ -57,11 +58,7 @@ class Trainer():
         self.warmup_dev_dataloader = data[1]
         self.train_dataloader = data[2]
         self.val_data = data[3]
-
-
-        self.entity_id_dict = data[4]
-        self.doc_feature_embedding = data[5]
-        self.entity_embedding = data[6]
+        self.test_data = data[4]
 
 
     def actor_critic_loss(self, batch_rewards1, act_probs_steps1, q_values_steps1, embedding_loss, reasoning_loss, all_loss_list):
@@ -70,9 +67,8 @@ class Trainer():
         batch_rewards1[1] = torch.reshape(batch_rewards1[1], (batch_rewards1[1].shape[0], self.config['topk'][0], self.config['topk'][1]))
         batch_rewards1[2] = torch.reshape(batch_rewards1[2], (batch_rewards1[2].shape[0], self.config['topk'][0], self.config['topk'][1], self.config['topk'][2]))
         
-        for i in range(1, num_steps1):#本轮生成的图算是一次采样，基于此次采样求总的intermediate reward
-            batch_rewards1[num_steps1 - i - 1] = batch_rewards1[num_steps1 - i - 1] + \
-                                                self.config['gamma'] * torch.mean(batch_rewards1[num_steps1 - i], dim=-1)
+        for i in range(1, num_steps1):#one episode, calculate intermediate reward
+            batch_rewards1[num_steps1 - i - 1] = batch_rewards1[num_steps1 - i - 1] + self.config['gamma'] * torch.mean(batch_rewards1[num_steps1 - i], dim=-1)
        
         assert len(self.config['topk']) == 3
         batch_rewards1[1] = torch.reshape(batch_rewards1[1], (batch_rewards1[1].shape[0], self.config['topk'][0] * self.config['topk'][1]))
@@ -82,12 +78,7 @@ class Trainer():
             batch_reward1 = batch_rewards1[i]
             q_values_step1 = q_values_steps1[i]
             act_probs_step1 = act_probs_steps1[i]
-            critic_loss1, actor_loss1 = self.model_anchor.step_update(act_probs_step1, q_values_step1,
-                                                                            batch_reward1,
-                                                                            1 - embedding_loss.detach(),
-                                                                            1 - reasoning_loss.detach(),
-                                                                            self.config['alpha1'],
-                                                                            self.config['alpha2'])#计算actor和critic的loss
+            critic_loss1, actor_loss1 = self.model_anchor.step_update(act_probs_step1, q_values_step1, batch_reward1, 1 - embedding_loss.detach(), 1 - reasoning_loss.detach(), self.config['alpha1'], self.config['alpha2'])#calculate actor loss and critic loss
             all_loss_list.append(actor_loss1.mean())
             all_loss_list.append(critic_loss1.mean())
 
@@ -115,7 +106,7 @@ class Trainer():
             act_probs_steps1, q_values_steps1, step_rewards1, anchor_graph1, anchor_relation1 = self.model_anchor(batch['item1'])
             act_probs_steps2, q_values_steps2, step_rewards2, anchor_graph2, anchor_relation2 = self.model_anchor(batch['item2'])
             t2=time.time()
-            embedding_predict = self.model_recommender(batch['item1'], batch['item2'], anchor_graph1, anchor_graph2)[0]#item1和item2的相似度衡量值，归一到[0,1]
+            embedding_predict = self.model_recommender(batch['item1'], batch['item2'], anchor_graph1, anchor_graph2)[0]#similarities between item1 and item2，normalize to [0,1]
             t3=time.time()
             reasoning_predict = self.model_reasoner(batch['item1'], batch['item2'], anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2)[0]
             t4=time.time()
@@ -211,16 +202,16 @@ class Trainer():
         torch.save(state_reasoner, filename_reasoner)
         self.logger.info("Saving checkpoint: {} ...".format(filename_reasoner))
 
-
     def train(self):
         """
             Full training logic
         """
-        self.logger = get_logger("train")
-
         # warm up training stage
         if self.config['warm_up']:
-            self.warm_up()
+            #self.warm_up()
+            #self.model_anchor.load_state_dict(torch.load(str(self.checkpoint_dir / 'warmup_model.ckpt')))
+            self.logger.info("warm up ckpt loading")
+            self.model_anchor.load_state_dict(torch.load('./out/saved/models/AnchorKG/MKG5b-1114_103034/warmup_model.ckpt'))
 
         self.logger.info("anchor graph training")
         valid_scores = []
@@ -236,7 +227,7 @@ class Trainer():
 
             early_stopping(valid_socre)
             if early_stopping.early_stop:
-                self.logger.info("Early stop at epoch {}, best auc score: {:.5f}".format(epoch, self.early_stopping.best_score))
+                self.logger.info("Early stop at epoch {}, best auc score: {:.5f}".format(epoch, early_stopping.best_score))
                 break
             elif early_stopping.counter==0:
                 self._save_checkpoint(epoch)
@@ -269,10 +260,10 @@ class Trainer():
     def warm_up(self):
         self.logger.info("warm up training")
         warmup_model = self.model_anchor
-        optimizer_warmup = torch.optim.AdamW(warmup_model.parameters(), lr=self.config['lr'], weight_decay=self.config['weight_decay'])
+        optimizer_warmup = torch.optim.Adam(warmup_model.parameters(), lr=self.config['warmup_lr'], weight_decay=self.config['warmup_weight_decay'])
     
         early_stopping = EarlyStopping(patience=self.config['early_stop'], greater=True)
-        for epoch in range(10):
+        for epoch in range(self.config['warmup_epochs']):
             warmup_model.train()
             warmup_all_loss = 0
             for step, batch in enumerate(self.warmup_train_dataloader):
@@ -295,13 +286,64 @@ class Trainer():
                     y_labels.extend(y_label.tolist())
                 auc_score = cal_auc(y_labels, y_preds)
             self.logger.info("epoch: {}, warmup dev_loss: {:.5f}, warmup dev_auc: {:.5f}".format(epoch, dev_loss/len(self.warmup_dev_dataloader), auc_score))
+            if self.config['use_nni'] and epoch % 5 == 0:
+                nni.report_intermediate_result({'default': auc_score})
+                
             early_stopping(auc_score)
             if early_stopping.early_stop:
-                self.logger.info("warmup Early stop at epoch {}, best warmup auc score: {:.5f}".format(epoch, self.early_stopping.best_score))
+                self.logger.info("warmup Early stop at epoch {}, best warmup auc score: {:.5f}".format(epoch, early_stopping.best_score))
                 break
             elif early_stopping.counter==0:
                 torch.save(warmup_model.state_dict(), str(self.checkpoint_dir / 'warmup_model.ckpt'))
+                self.logger.info("Saving model checkpoint to {}".format(str(self.checkpoint_dir / 'warmup_model.ckpt')))
+            
+        if self.config['use_nni']:
+            nni.report_final_result({"default": early_stopping.best_score})
 
+    def test(self):
+        self.logger.info('testing')
+        #load model
+        self.model_anchor.load_state_dict(torch.load(str(self.checkpoint_dir / 'model_anchor.ckpt')))
+        self.model_recommender.load_state_dict(torch.load(str(self.checkpoint_dir / 'model_recommender.ckpt')))
+        self.model_reasoner.load_state_dict(torch.load(str(self.checkpoint_dir / 'model_reasoner.ckpt')))
+    
+        #test
+        self.model_anchor.eval()
+        self.model_recommender.eval()
+        self.model_reasoner.eval()
+
+        # get all news embeddings
+        doc_list = list(self.test_data.keys())
+        self.logger.info('len(doc_list) : {}'.format(len(doc_list)))
+        start_list = list(range(0, len(doc_list), self.config['batch_size']))
+        doc_embedding = []
+        doc_embedding_dict = {}
+        for start in start_list:
+            end = start + self.config['batch_size']
+            _, _, _, anchor_graph1, _ = self.model_anchor(doc_list[start:end])
+            doc_embedding.extend(self.model_recommender(doc_list[start:end], doc_list[start:end], anchor_graph1, anchor_graph1)[1].cpu().data.numpy())
+            
+        # knn search topk
+        ann = hnswlib.Index(space='cosine', dim=128)
+        ann.init_index(max_elements=len(doc_list), ef_construction=200, M=16)
+        for i in range(len(doc_list)):
+            doc_embedding_dict[doc_list[i]] = doc_embedding[i]
+            ann.add_items(doc_embedding[i], i)
+        ann.set_ef(100)
+        predict_dict = {}
+        for doc in self.test_data:
+            doc_embedding = doc_embedding_dict[doc]
+            labels, distances = ann.knn_query(doc_embedding, k=10)
+            predict_dict[doc] = list(map(lambda x: doc_list[x], labels[0]))
+        # compute metric
+        avg_precision, avg_recall, avg_ndcg, avg_hit, invalid_users = evaluate(predict_dict, self.test_data)
+        self.logger.info('NDCG={:.3f} |  Recall={:.3f} | HR={:.3f} | Precision={:.3f} | Invalid users={}'.format(avg_ndcg, avg_recall, avg_hit, avg_precision, len(invalid_users)))
         
+
+
+
+
+
+            
 
 

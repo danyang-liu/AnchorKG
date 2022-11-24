@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append('')
 import argparse
-from utils.util import process_mind_data, get_mind_data_set, download_deeprec_resources
+from utils.util import process_mind_data, get_mind_data_set, download_deeprec_resources, process_KPRN_data, cache_data
 from utils.parse_config import ConfigParser
 
 
@@ -12,11 +12,12 @@ parser = argparse.ArgumentParser(description='data processing')
 parser.add_argument('-c', '--config', default="./config/data_config.json", type=str, help='config file path (default: None)')
 parser.add_argument('-r', '--resume', default=None, type=str, help='path to latest checkpoint (default: None)')
 parser.add_argument('-d', '--device', default=None, type=str, help='indices of GPUs to enable (default: all)')
+parser.add_argument('--use_nni', action='store_true', help='use nni to tune hyperparameters')
 
 config = ConfigParser.from_args(parser)
 
 # Options: demo, small, large
-#这里下载速度有点慢，可以自己去对应url下载zip然后放到对应目录
+# The download speed here is a bit slow, you can go to the corresponding url to download the zip and put it in the corresponding directory
 MIND_type = config['MIND_type']
 data_path = config['datapath']
 
@@ -46,3 +47,7 @@ if not os.path.exists(knowledge_graph_file):
 
 
 process_mind_data(config)
+
+cache_data(config)
+
+process_KPRN_data(config)

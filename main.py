@@ -1,13 +1,29 @@
 import argparse
 from data_loader.data_loaders import *
-from train_test import *
+from model.AnchorKG import AnchorKG
+from model.Recommender import Recommender
+from model.Reasoner import Reasoner
+from trainer.trainer import Trainer
 from utils.parse_config import ConfigParser
 
 
 def main(config):
+    seed_everything(config['seed'])
+    device, _ = prepare_device(config['n_gpu'])
+    
     data = load_data(config)
-    train(data, config)
-    test(data, config)
+    _, _, _, _, _, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, kg_env, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
+    
+    model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, hit_dict, entity_id_dict, neibor_embedding, neibor_num, device)
+    model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device)
+    model_reasoner = Reasoner(config, entity_embedding, relation_embedding, device)
+
+    trainer = Trainer(config, model_anchor, model_recommender, model_reasoner, device, data)
+    trainer.logger.info("config {}".format(config.config))
+
+    trainer.train()
+
+    trainer.test()
 
 
 if __name__ == '__main__':
@@ -22,5 +38,4 @@ if __name__ == '__main__':
     parser.add_argument('--use_nni', action='store_true', help='use nni to tune hyperparameters')
 
     config = ConfigParser.from_args(parser)
-    seed_everything(config['seed'])
     main(config)
