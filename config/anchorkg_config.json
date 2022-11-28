@@ -54,7 +54,7 @@
     "verbosity": 2,
     "seed": 2022,
 
-    "lr": 2e-3,
+    "lr": 2e-4,
     "weight_decay": 1e-6,
 
     "warm_up": true,

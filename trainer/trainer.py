@@ -125,10 +125,10 @@ class Trainer():
             time_recommender += t3-t2
             time_reasoner += t4-t3
             time_optimize += t5-t4
-            print(embedding_loss_mean.item())
-            print(reasoning_loss_mean.item())
-            print(actor_losses.item())
-            print(critic_losses.item())
+            # print(embedding_loss_mean.item())
+            # print(reasoning_loss_mean.item())
+            # print(actor_losses.item())
+            # print(critic_losses.item())
         
         self.logger.info("time_anchor: {:.5f}, time_recommender: {:.5f}, time_reasoner: {:.5f}, time_optimize: {:.5f}".format(time_anchor, time_recommender, time_reasoner, time_optimize))
         self.logger.info("anchor all loss :{:.5f}".format(anchor_all_loss/len(self.train_dataloader)))

@@ -112,10 +112,6 @@ class Reasoner(BaseModel):
         for i in range(len(reasoning_paths)):
             paths = reasoning_paths[i]
             edges = reasoning_edges[i]
-            # if len(paths)==0:
-            #     batch_predict.append(torch.tensor([-torch.inf]).to(self.device))#预测值默认为-inf
-            #     batch_path_scores.append([])
-            #     continue
             news_embeeding_1 = self.news_compress(self.doc_feature_embedding[news1[i]].to(self.device)).unsqueeze(dim=0)
             news_embedding_2 = self.news_compress(self.doc_feature_embedding[news2[i]].to(self.device)).unsqueeze(dim=0)
             path_scores=[]
@@ -139,21 +135,7 @@ class Reasoner(BaseModel):
         predicts_num = torch.div(overlap_entity_num, torch.log(torch.e+anchor_graph1_num+anchor_graph2_num))
         predicts = self.sigmoid(0.8*predicts_qua + 0.2*predicts_num)
 
-        gt_indices = torch.gt(predicts, 1.0)
-        lt_indices = torch.lt(predicts, 0.0)
-        gt_predicts = predicts[gt_indices]
-        lt_predicts = predicts[lt_indices]
-        if len(gt_predicts) > 0 or len(lt_predicts) > 0:
-            print('error')
-            print("gt_predicts", gt_predicts)
-            print("lt_predicts", lt_predicts)
-            print(path_predicts[gt_indices])
-            print(predicts_qua[gt_indices])
-            print(predicts_num[gt_indices])
-            print(path_predicts[lt_indices])
-            print(predicts_qua[lt_indices])
-            print(predicts_num[lt_indices])
-            exit(0)
+       
         return predicts, reasoning_paths, reasoning_edges, batch_predict, batch_path_scores
     
     # def get_path_score(self, reasoning_paths):
@@ -170,3 +152,18 @@ class Reasoner(BaseModel):
     #             predict_scores[-1].append(path_score)
     #         predict_scores[-1] = torch.sum(predict_scores[-1]).float()
     #     return torch.stack(predict_scores).to(self.device)
+    # gt_indices = torch.gt(predicts, 1.0)
+    # lt_indices = torch.lt(predicts, 0.0)
+    # gt_predicts = predicts[gt_indices]
+    # lt_predicts = predicts[lt_indices]
+    # if len(gt_predicts) > 0 or len(lt_predicts) > 0:
+    #     print('error')
+    #     print("gt_predicts", gt_predicts)
+    #     print("lt_predicts", lt_predicts)
+    #     print(path_predicts[gt_indices])
+    #     print(predicts_qua[gt_indices])
+    #     print(predicts_num[gt_indices])
+    #     print(path_predicts[lt_indices])
+    #     print(predicts_qua[lt_indices])
+    #     print(predicts_num[lt_indices])
+    #     exit(0)
