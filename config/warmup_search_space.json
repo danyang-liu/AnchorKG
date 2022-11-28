@@ -1,13 +1,13 @@
 {
-    "batch_size":{
+    "warmup_batch_size":{
         "_type": "choice",
         "_value":[128, 256, 512]
     },
-    "lr": {
+    "warmup_lr": {
         "_type": "choice",
         "_value": [1e-4, 1e-3, 3e-3, 5e-3, 1e-2]
     },
-    "weight_decay":{
+    "warmup_weight_decay":{
         "_type": "choice",
         "_value": [0, 1e-4, 1e-5, 1e-6]
     }

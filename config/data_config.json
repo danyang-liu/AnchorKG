@@ -3,26 +3,37 @@
 
     "MIND_type": "small",
     "datapath": "./data",
+    "cache_path": "./data/cache",
     "save_dir": "./out/saved/",
-    "train_news": "/train/news.tsv",
-    "train_behavior": "/train/behaviors.tsv",
-    "valid_news": "/valid/news.tsv",
-    "valid_behavior": "/valid/behaviors.tsv",
-    "warm_up_train_file": "/warmup_data_train.tsv",
-    "warm_up_test_file": "/warmup_data_test.tsv",
-    "train_file": "/item2item/train.tsv",
-    "val_file": "/item2item/valid.tsv",
-    "test_file": "/item2item/test.tsv",
-    "doc_feature_entity_file": "/doc_feature_entity.tsv",
-    "doc_feature_embedding_file": "/doc_feature_embedding.tsv",
+    "train_news": "/mind/train/news.tsv",
+    "train_behavior": "/mind/train/behaviors.tsv",
+    "valid_news": "/mind/valid/news.tsv",
+    "valid_behavior": "/mind/valid/behaviors.tsv",
+
+    "pos_train_file": "/item2item/pos_train.tsv",
+    "pos_val_file": "/item2item/pos_valid.tsv",
+    "pos_test_file": "/item2item/pos_test.tsv",
+    "all_news_file": "/item2item/all_news.tsv",
+
+    "doc_feature_entity_file": "/item2item/doc_feature_entity.tsv",
+    "doc_feature_embedding_file": "/item2item/doc_feature_embedding.tsv",
+
+    "train_file": "/item2item/random_neg_sample_train.tsv",
+    "val_file": "/item2item/random_neg_sample_valid.tsv",
+    "test_file": "/item2item/pos_test.tsv",
+
     "kg_file": "/kg/wikidata-graph/wikidata-graph.tsv",
     "entity_embedding_file": "/kg/wikidata-graph/entity2vecd100.vec",
     "relation_embedding_file": "/kg/wikidata-graph/relation2vecd100.vec",
     "entity2id_file": "/kg/wikidata-graph/entity2id.txt",
     "relation2id_file": "/kg/wikidata-graph/relation2id.txt",
-    "KPRN_train_file": "/KPRN/train_data.json",
-    "KPRN_val_file": "/KPRN/dev_data.json",
+
+    "KPRN_train_file": "/kprn/train_data.json",
+    "KPRN_val_file": "/kprn/valid_data.json",
 
     "doc_embedding_size": 768,
-    "news_entity_num": 20
+    "entity_embedding_size": 100,
+    "news_entity_num": 20,
+    "train_neg_num": 4,
+    "seed": 2022
 }

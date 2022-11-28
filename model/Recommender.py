@@ -14,14 +14,13 @@ class Recommender(BaseModel):
         self.entity_adj = entity_adj
         self.relation_adj = relation_adj
 
-        self.sigmoid = nn.Sigmoid()
         self.softmax = nn.Softmax(dim=-2)
         self.cos = nn.CosineSimilarity(dim=-1)
         self.mlp = nn.Sequential(
                         nn.Linear(self.config['embedding_size']*2, self.config['embedding_size']),
                         nn.ELU(),
                         nn.Linear(self.config['embedding_size'], self.config['embedding_size']),
-                        nn.ELU(),
+                        nn.Tanh(),
                     ).to(device)
         self.news_compress = nn.Sequential(
                                 nn.Linear(self.config['doc_embedding_size'], self.config['embedding_size']),
@@ -30,21 +29,21 @@ class Recommender(BaseModel):
                                 nn.Tanh()
                             ).to(device)
         self.entity_compress =  nn.Sequential(
-                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size'], bias=False),
                                     nn.Tanh(),
                                 ).to(device)
         self.relation_compress = nn.Sequential(
-                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size'], bias=False),
                                     nn.Tanh(),
                                 ).to(device)
         self.anchor_embedding_layer = nn.Sequential(
-                                        nn.Linear(self.config['embedding_size']*2, self.config['embedding_size']),
+                                        nn.Linear(self.config['embedding_size']*2, self.config['embedding_size'], bias=False),
                                         nn.Tanh(),
                                     ).to(device)
         self.anchor_layer = nn.Sequential(
-                                nn.Linear(self.config['embedding_size'], self.config['embedding_size']),
+                                nn.Linear(self.config['embedding_size'], self.config['embedding_size'], bias=False),
                                 nn.ELU(),
-                                nn.Linear(self.config['embedding_size'],1),
+                                nn.Linear(self.config['embedding_size'],1, bias=False),
                             ).to(device)
 
     def get_news_embedding_batch(self, newsids):
@@ -54,24 +53,13 @@ class Recommender(BaseModel):
         return news_embeddings.to(self.device)
 
     def get_neighbors(self, entities):
-        neighbor_entities = torch.zeros([len(entities), len(entities[0]), 20], dtype=torch.long)
-        neighbor_relations = torch.zeros([len(entities), len(entities[0]), 20], dtype=torch.long)
-        for i, entity_batch in enumerate(entities):
-            for j, entity in enumerate(entity_batch):
-                assert type(entity) == int
-                neighbor_entities[i][j] = self.entity_adj[entity]
-                neighbor_relations[i][j] = self.relation_adj[entity]
-                
-        return neighbor_entities, neighbor_relations #(batch, 5+5*3+5*3*2, 20)
+        neighbor_entities = self.entity_adj[entities]
+        neighbor_relations = self.relation_adj[entities]
+        return neighbor_entities, neighbor_relations
 
     def get_anchor_graph_embedding(self, anchor_graph):
-        anchor_graph_nodes = []#(batch, 50),id for all nodes in anchor graph
-        for i in range(len(anchor_graph[1])):
-            anchor_graph_nodes.append([])
-            for j in range(len(anchor_graph)):
-                anchor_graph_nodes[-1].extend(anchor_graph[j][i].tolist())
-
-        anchor_graph_nodes_embedding = self.entity_compress(self.entity_embedding(torch.tensor(anchor_graph_nodes)).to(self.device))
+        anchor_graph_nodes  = torch.cat(anchor_graph, dim=-1).to(self.entity_adj.device)
+        anchor_graph_nodes_embedding = self.entity_compress(self.entity_embedding(anchor_graph_nodes).to(self.device))
         neibor_entities, neibor_relations = self.get_neighbors(anchor_graph_nodes)#first-order neighbors for each entity
         neibor_entities_embedding = self.entity_compress(self.entity_embedding(neibor_entities).to(self.device))
         neibor_relations_embedding = self.relation_compress(self.relation_embedding(neibor_relations).to(self.device))
@@ -89,10 +77,10 @@ class Recommender(BaseModel):
         news_embedding2 = self.news_compress(news_embedding2)
         anchor_embedding1 = self.get_anchor_graph_embedding(anchor_graph1)
         anchor_embedding2 = self.get_anchor_graph_embedding(anchor_graph2)
-        news_embedding1 = torch.cat([news_embedding1,anchor_embedding1], dim=-1)
-        news_embedding2 = torch.cat([news_embedding2,anchor_embedding2], dim=-1)
+        news_embedding1 = torch.cat([news_embedding1, anchor_embedding1], dim=-1)
+        news_embedding2 = torch.cat([news_embedding2, anchor_embedding2], dim=-1)
 
         news_embedding1 = self.mlp(news_embedding1)
         news_embedding2 = self.mlp(news_embedding2)
-        predict = self.sigmoid((self.cos(news_embedding1, news_embedding2)+1)/2)
+        predict = (self.cos(news_embedding1, news_embedding2)+1)/2
         return predict, news_embedding1

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from utils.parse_config import ConfigParser
 import argparse
@@ -20,7 +19,7 @@ class KPRN(nn.Module):
         self.doc_feature_embedding = doc_feature_embedding
         self.entity_embedding = nn.Embedding.from_pretrained(entity_embedding)
         self.relation_embedding = nn.Embedding.from_pretrained(relation_embedding)
-
+        self.innews_relation = nn.Embedding(1, self.config['embedding_size']).to(device)
         self.news_compress = nn.Sequential(
                                 nn.Linear(self.config['doc_embedding_size'], self.config['embedding_size']),
                                 nn.ELU(),
@@ -28,20 +27,19 @@ class KPRN(nn.Module):
                                 nn.Tanh()
                             ).to(device)
         self.entity_compress =  nn.Sequential(
-                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size'], bias=False),
                                     nn.Tanh(),
                                 ).to(device)
         self.relation_compress = nn.Sequential(
-                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size']),
+                                    nn.Linear(self.config['entity_embedding_size'], self.config['embedding_size'], bias=False),
                                     nn.Tanh(),
                                 ).to(device)
-        
-        self.lstm = nn.LSTM(2*self.config['embedding_size'], self.config['embedding_size'], batch_first=True).to(device)
-        self.mlp = nn.Sequential(
-                        nn.Linear(self.config['embedding_size'], self.config['embedding_size']),
-                        nn.ReLU(),
-                        nn.Linear(self.config['embedding_size'], 1)
-                    ).to(device)
+        self.gru = nn.GRU(2*self.config['embedding_size'], self.config['embedding_size'], batch_first=True).to(device)
+        self.gru_layer = nn.Sequential(
+                            nn.Linear(self.config['embedding_size'], self.config['embedding_size']),
+                            nn.ELU(),
+                            nn.Linear(self.config['embedding_size'], 1)
+                        ).to(device)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, data):
@@ -52,13 +50,14 @@ class KPRN(nn.Module):
             news2 = self.news_compress(self.doc_feature_embedding[item2].to(self.device)).unsqueeze(dim=0)
             path_scores=[]
             for path, edge in zip(paths, edges):
-                path_node_embeddings = self.entity_compress(self.entity_embedding(torch.tensor(path)).to(self.device))#(path_len-2, embedding_size)
-                path_edge_embeddings = self.relation_compress(self.relation_embedding(torch.tensor(edge+[0,0])).to(self.device))#(path_len, embedding_size)
+                path_node_embeddings = self.entity_compress(self.entity_embedding(torch.tensor(path, dtype=torch.long)).to(self.device))#(path_len-2, embedding_size)
+                path_edge_embeddings = self.relation_compress(self.relation_embedding(torch.tensor(edge[1:], dtype=torch.long)).to(self.device))#(path_len-3, embedding_size)
                 path_node_embeddings = torch.cat((news1, path_node_embeddings, news2), dim=0) #(path_len, embedding_size)
+                path_edge_embeddings = torch.cat((self.innews_relation(torch.tensor([0]).to(self.device)), path_edge_embeddings, self.innews_relation(torch.tensor([0]).to(self.device)), torch.zeros([1, self.config['embedding_size']]).to(self.device)), dim=0) #(path_len, embedding_size)
                 path_node_embeddings = torch.unsqueeze(path_node_embeddings, 0)#(1, path_len, embedding_size)
                 path_edge_embeddings = torch.unsqueeze(path_edge_embeddings, 0)#(1, path_len, embedding_size)
-                output, _ = self.lstm(torch.cat((path_node_embeddings, path_edge_embeddings), dim=2))#(1, path_len, embedding_size)
-                path_score = self.mlp(torch.squeeze(output)[-1])#[1]
+                output, _ = self.gru(torch.cat((path_node_embeddings, path_edge_embeddings), dim=2))#(1, path_len, embedding_size)
+                path_score = self.gru_layer(torch.squeeze(output)[-1])#[1]
                 path_scores.append(path_score)
             path_scores = torch.stack(path_scores, dim=0) #(path_num, 1)
             batch_path_scores.append(path_scores)
@@ -81,7 +80,6 @@ class KPRN_Dataset(Dataset):
         sample = self.data[idx]
         return sample
 
-
 class KPRN_Trainer():
     def __init__(self, config, model, train_dataloader, dev_dataloader, test_dataloader, device) -> None:
         super().__init__()  
@@ -94,10 +92,7 @@ class KPRN_Trainer():
         self.device = device
         self.epochs = config['epochs']
         self.num_train_steps = int(len(train_dataloader) * self.epochs)
-
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['weight_decay'])
-        
-        #self.scheduler = ExponentialLR(self.optimizer, gamma=0.98)
         self.early_stopping = EarlyStopping(patience=config['early_stop'], greater=True)
         self.ckpt_dir = config.save_dir
     
@@ -123,7 +118,6 @@ class KPRN_Trainer():
         if self.config['use_nni']:
             nni.report_final_result({"default":self.early_stopping.best_score})
                     
-            
     def _train_epoch(self, epoch):
         epoch_loss = 0
         self.model.train()
@@ -154,7 +148,6 @@ class KPRN_Trainer():
             auc_score = cal_auc(dev_labels, dev_predicts)
             self.logger.info("epoch: {}, dev_loss: {:.5f}, dev_auc: {:.5f}".format(epoch, dev_loss/len(dev_dataloader), auc_score))
         return {'auc_score': auc_score}
-
 
     def predict(self):
         ckpt_path = os.path.join(self.ckpt_dir, 'KPRN_model.ckpt')
@@ -187,7 +180,6 @@ class KPRN_Trainer():
                     else:
                         f2.write(json.dumps(_)+"\n")
                                 
-    
     def _save_checkpoint(self, epoch):
         ckpt_path = os.path.join(self.ckpt_dir, 'KPRN_model.ckpt')
         torch.save(self.model.state_dict(), ckpt_path)
@@ -254,13 +246,9 @@ if __name__ == '__main__':
     train_dataloader, dev_dataloader, test_dataloader = create_dataloaders(config)
 
     #model
-    if os.path.exists(config['datapath']+"/cache/entity_embedding.pt"):
-        entity_embedding = torch.load(config['datapath']+"/cache/entity_embedding.pt")
-        relation_embedding = torch.load(config['datapath']+"/cache/relation_embedding.pt")
-    else:
-        entity_adj, relation_adj, entity_id_dict, relation_id_dict, kg_env = build_network(config)
-        entity_embedding, relation_embedding = build_entity_relation_embedding(config, len(entity_id_dict), len(relation_id_dict))
-    doc_feature_embedding = build_doc_feature_embedding(config)
+    doc_feature_embedding = np.load(config['cache_path']+"/doc_feature_embedding.npy", allow_pickle=True).item()
+    entity_embedding = torch.load(config['cache_path']+"/entity_embedding.pt")
+    relation_embedding = torch.load(config['cache_path']+"/relation_embedding.pt")
 
     model = KPRN(config, doc_feature_embedding, entity_embedding, relation_embedding, device=device)
 
