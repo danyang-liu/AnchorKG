@@ -35,7 +35,7 @@ Files in data folder:
         - `predict_train.json` warm up train data for anchorKG
         - `predict_valid.json` warm up valid data for anchorKG
 
-## Requeirements:
+## Requirements:
 ```
 python == 3.9.13
 torch == 1.12.0
@@ -60,6 +60,7 @@ tqdm == 4.64.1
     * [MIND_large_valid](https://mind201910small.blob.core.windows.net/release/MINDlarge_dev.zip): ./data/mind/valid/
     * [MIND_small_train](https://mind201910small.blob.core.windows.net/release/MINDsmall_train.zip): ./data/mind/train/
     * [MIND_small_valid](https://mind201910small.blob.core.windows.net/release/MINDsmall_dev.zip): ./data/mind/valid/
+    * [Knowledge Graph](https://kredkg.blob.core.windows.net/wikidatakg/kg.zip): ./data/kg/
 
 
 2. Kprn training
