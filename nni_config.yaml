@@ -1,0 +1,24 @@
+experimentName: anchorkg
+useAnnotation: false
+searchSpaceFile: ./config/anchorkg_search_space.json
+
+trialCommand: python main.py --use_nni
+trialCodeDirectory: .
+trialGpuNumber: 1 #number of gpu used for one trial
+
+trialConcurrency: 3 # trial concurrency numbers for the experiment
+maxTrialNumber: 6000
+maxExperimentDuration: 100d
+
+experimentWorkingDirectory: ./nni-experiments
+
+tuner:
+  name: TPE
+  classArgs:
+    optimize_mode: maximize # related to metrics
+
+
+trainingService: # training platform
+  platform: local
+  useActiveGpu: True
+  gpuIndices: 1,2,6 # starting from 0

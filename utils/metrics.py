@@ -48,5 +48,5 @@ def evaluate(topk_matches, test_user_products):
     avg_recall = np.mean(recalls) * 100
     avg_ndcg = np.mean(ndcgs) * 100
     avg_hit = np.mean(hits) * 100
-    print('NDCG={:.3f} |  Recall={:.3f} | HR={:.3f} | Precision={:.3f} | Invalid users={}'.format(
-            avg_ndcg, avg_recall, avg_hit, avg_precision, len(invalid_users)))
+    return avg_precision, avg_recall, avg_ndcg, avg_hit, invalid_users
+    

@@ -1,0 +1,68 @@
+{
+    "name": "AnchorKG",
+    "n_gpu": 1,
+
+    "batch_size": 64,
+    "shuffle": true,
+    "num_workers": 0,
+
+    "datapath": "./data",
+    "cache_path": "./data/cache",
+    "save_dir": "./out/saved/",
+    "train_news": "/mind/train/news.tsv",
+    "train_behavior": "/mind/train/behaviors.tsv",
+    "valid_news": "/mind/valid/news.tsv",
+    "valid_behavior": "/mind/valid/behaviors.tsv",
+
+    "warm_up_train_file": "/kprn/predict_train.json",
+    "warm_up_dev_file": "/kprn/predict_valid.json",
+
+    "pos_train_file": "/item2item/pos_train.tsv",
+    "pos_val_file": "/item2item/pos_valid.tsv",
+    "pos_test_file": "/item2item/pos_test.tsv",
+    "all_news_file": "/item2item/all_news.tsv",
+
+    "doc_feature_entity_file": "/item2item/doc_feature_entity.tsv",
+    "doc_feature_embedding_file": "/item2item/doc_feature_embedding.tsv",
+
+    "train_file": "/item2item/random_neg_sample_train.tsv",
+    "val_file": "/item2item/random_neg_sample_valid.tsv",
+    "test_file": "/item2item/pos_test.tsv",
+
+    "kg_file": "/kg/wikidata-graph/wikidata-graph.tsv",
+    "entity_embedding_file": "/kg/wikidata-graph/entity2vecd100.vec",
+    "relation_embedding_file": "/kg/wikidata-graph/relation2vecd100.vec",
+    "entity2id_file": "/kg/wikidata-graph/entity2id.txt",
+    "relation2id_file": "/kg/wikidata-graph/relation2id.txt",
+    
+    "doc_embedding_size": 768,
+    "entity_embedding_size": 100,
+    "embedding_size": 128,
+    "news_entity_num": 20,
+    "alpha1": 0.9,
+    "alpha2": 0.1,
+    "topk": [
+        5,
+        3,
+        2
+    ],
+    "gamma": 1.0,
+
+    "epochs": 100,
+    "train_neg_num": 4,
+    "early_stop": 20,
+    "verbosity": 2,
+    "seed": 2022,
+
+    "lr": 2e-4,
+    "weight_decay": 1e-6,
+
+    "warm_up": true,
+    "warm_up_ckpt": null,
+    "warmup_epochs": 20,
+    "warmup_lr": 3e-3,
+    "warmup_weight_decay": 1e-6,
+    "warmup_batch_size": 256,
+    "warmup_num_workers": 0,
+    "warmup_early_stop": 5
+}
