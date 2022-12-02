@@ -11,6 +11,7 @@ import random
 import zipfile
 import os
 from tqdm import tqdm
+import copy
 
 def ensure_dir(dirname):
     dirname = Path(dirname)
@@ -466,14 +467,26 @@ def build_hit_dict(config):
     fp_train = open(config['datapath']+config['pos_train_file'], 'r', encoding='utf-8')
     for line in fp_train:
         linesplit = line.split('\n')[0].split('\t')
-        if linesplit[0] == '1':
-            if linesplit[1] not in hit_dict:
-                hit_dict[linesplit[1]] = set()
-            if linesplit[2] not in hit_dict:
-                hit_dict[linesplit[2]] = set()
-            hit_dict[linesplit[1]].add(linesplit[2])
-            hit_dict[linesplit[2]].add(linesplit[1])
-    return hit_dict
+        if linesplit[1] not in hit_dict:
+            hit_dict[linesplit[1]] = set()
+        if linesplit[2] not in hit_dict:
+            hit_dict[linesplit[2]] = set()
+        hit_dict[linesplit[1]].add(linesplit[2])
+        hit_dict[linesplit[2]].add(linesplit[1])
+    fp_train.close()
+
+    train_val_hit_dict = copy.deepcopy(hit_dict)
+    fp_val = open(config['datapath']+config['pos_val_file'], 'r', encoding='utf-8')
+    for line in fp_val:
+        linesplit = line.split('\n')[0].split('\t')
+        if linesplit[1] not in train_val_hit_dict:
+            train_val_hit_dict[linesplit[1]] = set()
+        if linesplit[2] not in train_val_hit_dict:
+            train_val_hit_dict[linesplit[2]] = set()
+        train_val_hit_dict[linesplit[1]].add(linesplit[2])
+        train_val_hit_dict[linesplit[2]].add(linesplit[1])
+    fp_val.close()
+    return hit_dict, train_val_hit_dict
 
 def knowledge_neg_sampling():
     pass

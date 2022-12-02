@@ -16,6 +16,7 @@ class Recommender(BaseModel):
 
         self.softmax = nn.Softmax(dim=-2)
         self.cos = nn.CosineSimilarity(dim=-1)
+        self.sigmoid = nn.Sigmoid()
         self.mlp = nn.Sequential(
                         nn.Linear(self.config['embedding_size']*2, self.config['embedding_size']),
                         nn.ELU(),
@@ -82,5 +83,5 @@ class Recommender(BaseModel):
 
         news_embedding1 = self.mlp(news_embedding1)
         news_embedding2 = self.mlp(news_embedding2)
-        predict = (self.cos(news_embedding1, news_embedding2)+1)/2
+        predict = self.sigmoid(self.cos(news_embedding1, news_embedding2))
         return predict, news_embedding1

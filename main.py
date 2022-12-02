@@ -11,7 +11,7 @@ def main(config):
     seed_everything(config['seed'])
     device, _ = prepare_device(config['n_gpu'])
     data = load_data(config)
-    _, _, _, _, _, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict = data
+    _, _, _, _, _, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict, _ = data
     
     model_anchor = AnchorKG(config, doc_entity_dict, entity_doc_dict, doc_feature_embedding, entity_adj, relation_adj, hit_dict, entity_id_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, device)
     model_recommender = Recommender(config, doc_feature_embedding, entity_embedding, relation_embedding, entity_adj, relation_adj, device)
