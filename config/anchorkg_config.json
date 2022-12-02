@@ -1,6 +1,6 @@
 {
     "name": "AnchorKG",
-    "n_gpu": 0,
+    "n_gpu": 1,
 
     "batch_size": 64,
     "shuffle": true,
@@ -54,7 +54,7 @@
     "verbosity": 2,
     "seed": 2022,
 
-    "lr": 2e-3,
+    "lr": 2e-4,
     "weight_decay": 1e-6,
 
     "warm_up": false,
