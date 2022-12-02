@@ -145,7 +145,7 @@ class AnchorKG(BaseModel):
 
         weights = weights.squeeze(-1)
         m = Categorical(weights)
-        acts_idx = m.sample(sample_shape=torch.Size([topk]))#存在同一位置的重复采样
+        acts_idx = m.sample(sample_shape=torch.Size([topk]))#may sample the same position multiple times
         acts_idx = acts_idx.permute(1,2,0)
         shape0 = acts_idx.shape[0]
         shape1 = acts_idx.shape[1]

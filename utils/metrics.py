@@ -1,5 +1,5 @@
 import numpy as np
-from math import log
+from math import log2
 from sklearn.metrics import roc_auc_score
 
 
@@ -20,7 +20,7 @@ def evaluate(topk_matches, test_user_products):
         if uid not in topk_matches or len(topk_matches[uid]) < 1:
             invalid_users.append(uid)
             continue
-        pred_list, rel_set = topk_matches[uid][::-1], test_user_products[uid]
+        pred_list, rel_set = topk_matches[uid], set(test_user_products[uid])
         if len(pred_list) == 0:
             continue
 
@@ -28,20 +28,20 @@ def evaluate(topk_matches, test_user_products):
         hit_num = 0.0
         for i in range(len(pred_list)):
             if pred_list[i] in rel_set:
-                dcg += 1. / (log(i + 2) / log(2))
+                dcg += 1. / log2(i + 2)
                 hit_num += 1
         # idcg
         idcg = 0.0
         for i in range(min(len(rel_set), len(pred_list))):
-            idcg += 1. / (log(i + 2) / log(2))
+            idcg += 1. / log2(i + 2)
         ndcg = dcg / idcg
         recall = hit_num / len(rel_set)
         precision = hit_num / len(pred_list)
         hit = 1.0 if hit_num > 0.0 else 0.0
 
-        ndcgs.append(ndcg)
-        recalls.append(recall)
         precisions.append(precision)
+        recalls.append(recall)
+        ndcgs.append(ndcg)
         hits.append(hit)
 
     avg_precision = np.mean(precisions) * 100

@@ -1,7 +1,6 @@
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from utils.util import *
 from KPRN_train import KPRN_Dataset
-import time
 
 class NewsDataset(Dataset):
     def __init__(self, dic_data, transform=None):
@@ -22,7 +21,7 @@ def process_data_and_cache(config):
     doc_entity_dict, entity_doc_dict = load_news_entity(config, entity_id_dict)
     doc_feature_embedding = build_doc_feature_embedding(config)
     neibor_embedding, neibor_num = build_neibor_embedding(config, entity_doc_dict, doc_feature_embedding, entity_id_dict)
-    hit_dict = build_hit_dict(config)
+    hit_dict, train_val_hit_dict = build_hit_dict(config)
     negative_sampling(config)
 
     os.makedirs(config['cache_path'], exist_ok=True)
@@ -38,7 +37,8 @@ def process_data_and_cache(config):
     torch.save(neibor_embedding, config['cache_path']+"/neibor_embedding.pt")
     torch.save(neibor_num, config['cache_path']+"/neibor_num.pt")
     np.save(config['cache_path']+"/hit_dict.npy", hit_dict)
-    return entity_id_dict, relation_id_dict, entity_adj, relation_adj, entity_embedding, relation_embedding, doc_entity_dict, entity_doc_dict, doc_feature_embedding, neibor_embedding, neibor_num, hit_dict
+    np.save(config['cache_path']+"/train_val_hit_dict.npy", train_val_hit_dict)
+    return entity_id_dict, relation_id_dict, entity_adj, relation_adj, entity_embedding, relation_embedding, doc_entity_dict, entity_doc_dict, doc_feature_embedding, neibor_embedding, neibor_num, hit_dict, train_val_hit_dict
 
 def load_data(config):
 
@@ -56,8 +56,9 @@ def load_data(config):
         neibor_embedding = torch.load(config['cache_path']+"/neibor_embedding.pt")
         neibor_num = torch.load(config['cache_path']+"/neibor_num.pt")
         hit_dict = np.load(config['cache_path']+"/hit_dict.npy", allow_pickle=True).item()
+        train_val_hit_dict = np.load(config['cache_path']+"/train_val_hit_dict.npy", allow_pickle=True).item()
     else:
-        entity_id_dict, relation_id_dict, entity_adj, relation_adj, entity_embedding, relation_embedding, doc_entity_dict, entity_doc_dict, doc_feature_embedding, neibor_embedding, neibor_num, hit_dict = process_data_and_cache(config)
+        entity_id_dict, relation_id_dict, entity_adj, relation_adj, entity_embedding, relation_embedding, doc_entity_dict, entity_doc_dict, doc_feature_embedding, neibor_embedding, neibor_num, hit_dict, train_val_hit_dict = process_data_and_cache(config)
 
     Train_data = build_train(config)
     Val_data = build_val(config)
@@ -116,5 +117,5 @@ def load_data(config):
 
     print("fininsh loading data!")
 
-    return warmup_train_dataloader, warmup_dev_dataloader, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict
+    return warmup_train_dataloader, warmup_dev_dataloader, train_dataloader, Val_data, Test_data, doc_feature_embedding, entity_adj, relation_adj, entity_id_dict, doc_entity_dict, entity_doc_dict, neibor_embedding, neibor_num, entity_embedding, relation_embedding, hit_dict, train_val_hit_dict
 

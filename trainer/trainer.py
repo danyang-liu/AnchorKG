@@ -1,5 +1,4 @@
 import time
-from numpy import inf
 import torch
 from utils.metrics import *
 from utils.pytorchtools import *
@@ -7,7 +6,6 @@ from utils.logger import *
 from model.AnchorKG import *
 from tqdm import tqdm
 import nni
-import hnswlib
 import json
 
 class Trainer():
@@ -41,6 +39,7 @@ class Trainer():
         self.train_dataloader = data[2]
         self.val_data = data[3]
         self.test_data = data[4]
+        self.train_val_hit_dict = data[-1]
 
     def actor_critic_loss(self, rewards_steps, act_probs_steps, state_values_steps, embedding_loss, reasoning_loss, actor_loss_list, critic_loss_list):
         #rewards_steps:[(batch, 5), (batch, 15), (batch, 30);  
@@ -56,7 +55,7 @@ class Trainer():
                 terminal_reward = self.config['alpha1'] * (1 - embedding_loss.detach()) + (1-self.config['alpha1']) * (1 - reasoning_loss.detach())
                 td_error = self.config['alpha2'] * rewards_steps[i] + ((1-self.config['alpha2']) * terminal_reward)[:,None] - baseline.expand(shape0, shape1, shape2).reshape(shape0, shape1*shape2)
             else:
-                td_error = self.config['alpha2']*rewards_steps[i] + (self.config['gamma']*state_values_steps[i+1].squeeze(-1)).detach() - baseline.expand(shape0, shape1, shape2).reshape(shape0, shape1*shape2)
+                td_error = self.config['alpha2'] * rewards_steps[i] + self.config['gamma'] * state_values_steps[i+1].squeeze(-1) - baseline.expand(shape0, shape1, shape2).reshape(shape0, shape1*shape2)
             actor_loss = - torch.log(act_probs_steps[i]) * td_error.detach()
             critic_loss = td_error.pow(2)
             actor_loss_list.append(actor_loss.mean())
@@ -72,6 +71,8 @@ class Trainer():
         self.model_recommender.train()
         self.model_reasoner.train()
         anchor_all_loss = 0
+        critic_all_loss = 0
+        actor_all_loss = 0
         embedding_all_loss = 0
         reasoning_all_loss = 0
         time_anchor = 0
@@ -117,6 +118,8 @@ class Trainer():
             self.optimizer_anchor.zero_grad()
             anchor_loss.backward()
             self.optimizer_anchor.step()
+            critic_all_loss = critic_all_loss + critic_losses.item()
+            actor_all_loss = actor_all_loss + actor_losses.item()
             anchor_all_loss = anchor_all_loss + anchor_loss.item()
 
             #torch.cuda.empty_cache()
@@ -125,13 +128,11 @@ class Trainer():
             time_recommender += t3-t2
             time_reasoner += t4-t3
             time_optimize += t5-t4
-            # print(embedding_loss_mean.item())
-            # print(reasoning_loss_mean.item())
-            # print(actor_losses.item())
-            # print(critic_losses.item())
         
         self.logger.info("time_anchor: {:.5f}, time_recommender: {:.5f}, time_reasoner: {:.5f}, time_optimize: {:.5f}".format(time_anchor, time_recommender, time_reasoner, time_optimize))
         self.logger.info("anchor all loss :{:.5f}".format(anchor_all_loss/len(self.train_dataloader)))
+        self.logger.info("critic all loss :{:.5f}".format(critic_all_loss/len(self.train_dataloader)))
+        self.logger.info("actor all loss :{:.5f}".format(actor_all_loss/len(self.train_dataloader)))
         self.logger.info("embedding all loss :{:.5f}".format(embedding_all_loss/len(self.train_dataloader)))
         self.logger.info("reasoning all loss :{:.5f}".format(reasoning_all_loss/len(self.train_dataloader)))
 
@@ -148,14 +149,15 @@ class Trainer():
         # get all news embeddings
         y_pred = []
         start_list = list(range(0, len(self.val_data['label']), self.config['batch_size']))
-        for start in tqdm(start_list, total=len(start_list)):
-            end = start + self.config['batch_size']
-            _, _, _, anchor_graph1, anchor_relation1 = self.model_anchor(self.val_data['item1'][start:end])
-            _, _, _, anchor_graph2, anchor_relation2 = self.model_anchor(self.val_data['item2'][start:end])
-            embedding_predict = self.model_recommender(self.val_data['item1'][start:end], self.val_data['item2'][start:end], anchor_graph1, anchor_graph2)[0]
-            reasoning_predict = self.model_reasoner(self.val_data['item1'][start:end], self.val_data['item2'][start:end], anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2)[0]
-            predict = self.config['alpha1'] * embedding_predict + (1-self.config['alpha1']) * reasoning_predict
-            y_pred.extend(predict.cpu().data.numpy())
+        with torch.no_grad():
+            for start in tqdm(start_list, total=len(start_list)):
+                end = start + self.config['batch_size']
+                _, _, _, anchor_graph1, anchor_relation1 = self.model_anchor(self.val_data['item1'][start:end])
+                _, _, _, anchor_graph2, anchor_relation2 = self.model_anchor(self.val_data['item2'][start:end])
+                embedding_predict = self.model_recommender(self.val_data['item1'][start:end], self.val_data['item2'][start:end], anchor_graph1, anchor_graph2)[0]
+                reasoning_predict = self.model_reasoner(self.val_data['item1'][start:end], self.val_data['item2'][start:end], anchor_graph1, anchor_graph2, anchor_relation1, anchor_relation2)[0]
+                predict = self.config['alpha1'] * embedding_predict + (1-self.config['alpha1']) * reasoning_predict
+                y_pred.extend(predict.cpu().data.numpy())
 
         truth = self.val_data['label']
         auc_score = cal_auc(truth, y_pred)
@@ -280,7 +282,10 @@ class Trainer():
         self.model_anchor.load_state_dict(torch.load(str(self.checkpoint_dir / 'model_anchor.ckpt')))
         self.model_recommender.load_state_dict(torch.load(str(self.checkpoint_dir / 'model_recommender.ckpt')))
         self.model_reasoner.load_state_dict(torch.load(str(self.checkpoint_dir / 'model_reasoner.ckpt')))
-    
+        # self.model_anchor.load_state_dict(torch.load('./out/saved/models/AnchorKG/1128_000026/model_anchor-8.ckpt'))
+        # self.model_recommender.load_state_dict(torch.load('./out/saved/models/AnchorKG/1128_000026/model_recommender-8.ckpt'))
+        # self.model_reasoner.load_state_dict(torch.load('./out/saved/models/AnchorKG/1128_000026/model_reasoner-8.ckpt'))
+
         #test
         self.model_anchor.eval()
         self.model_recommender.eval()
@@ -290,29 +295,27 @@ class Trainer():
         doc_list = list(self.test_data.keys())
         self.logger.info('len(doc_list) : {}'.format(len(doc_list)))
         start_list = list(range(0, len(doc_list), self.config['batch_size']))
-        doc_embedding = []
-        doc_embedding_dict = {}
-        for start in start_list:
-            end = start + self.config['batch_size']
-            _, _, _, anchor_graph1, _ = self.model_anchor(doc_list[start:end])
-            doc_embedding.extend(self.model_recommender(doc_list[start:end], doc_list[start:end], anchor_graph1, anchor_graph1)[1].cpu().data.numpy())
+        doc_embedding = torch.zeros([len(doc_list), self.config['embedding_size']]).to(self.device)
+        with torch.no_grad():
+            for start in start_list:
+                end = start + self.config['batch_size']
+                _, _, _, anchor_graph, _ = self.model_anchor(doc_list[start:end])
+                doc_embs = self.model_recommender(doc_list[start:end], doc_list[start:end], anchor_graph, anchor_graph)[1]
+                doc_embedding[start:end,:] = doc_embs
             
-        # knn search topk
-        ann = hnswlib.Index(space='cosine', dim=128)
-        ann.init_index(max_elements=len(doc_list), ef_construction=200, M=16)
-        for i in range(len(doc_list)):
-            doc_embedding_dict[doc_list[i]] = doc_embedding[i]
-            ann.add_items(doc_embedding[i], i)
-        ann.set_ef(100)
+        topk = 10
         predict_dict = {}
-        for doc in self.test_data:
-            doc_embedding = doc_embedding_dict[doc]
-            labels, distances = ann.knn_query(doc_embedding, k=10)
-            predict_dict[doc] = list(map(lambda x: doc_list[x], labels[0]))
+        for i, doc in enumerate(doc_list):
+            score, topk_items = torch.topk(torch.nn.functional.cosine_similarity(doc_embedding[i], doc_embedding, dim=-1), topk+len(self.train_val_hit_dict[doc])+1 if doc in self.train_val_hit_dict else topk+1)
+            topk_items = topk_items.tolist()
+            hit_set = self.train_val_hit_dict[doc] if doc in self.train_val_hit_dict else set()
+            filter_hit = [doc_list[item] for item in topk_items if doc_list[item] not in hit_set and item!=i]
+            predict_dict[doc] = filter_hit[:topk]
+
         # compute metric
         avg_precision, avg_recall, avg_ndcg, avg_hit, invalid_users = evaluate(predict_dict, self.test_data)
-        self.logger.info('NDCG={:.3f} |  Recall={:.3f} | HR={:.3f} | Precision={:.3f} | Invalid users={}'.format(avg_ndcg, avg_recall, avg_hit, avg_precision, len(invalid_users)))
-        
+        self.logger.info('topk={}, Precision={:.3f} |  Recall={:.3f} | NDCG={:.3f} | HR={:.3f} | Invalid users={}'.format(topk, avg_precision, avg_recall, avg_ndcg, avg_hit, len(invalid_users)))
+            
     def predict_anchor_graph(self):
         self.logger.info('predicting anchor graph')
         #load model
